@@ -5,9 +5,23 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useData } from '../context/DataContext.jsx'
 import { runTool, toolLabel } from '../lib/chatTools.js'
+import { productionDb, TABLES } from '../lib/supabase.js'
 import { IconX } from './Icons.jsx'
 
 const MAX_TOOL_ROUNDS = 6
+
+const newConversationId = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `c${Date.now()}${Math.random().toString(36).slice(2)}`)
+
+/** Save one question + answer to rca_chat_logs (migration 002). Fire-and-forget: a missing table or network error
+ *  must never affect the chat, so failures are only logged to the console. */
+async function saveChatLog(row) {
+  try {
+    const { error } = await productionDb.from(TABLES.chatLogs).insert(row)
+    if (error) console.warn('rca_chat_logs not saved:', error.message)
+  } catch (e) {
+    console.warn('rca_chat_logs not saved:', e.message)
+  }
+}
 
 const SUGGESTIONS = [
   'What changed in batch 5 of DO-539?',
@@ -146,6 +160,7 @@ export default function ChatPanel() {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const prevId = useRef(null)
+  const conversationId = useRef(newConversationId())
   const abort = useRef(null)
   const listRef = useRef(null)
   const inputRef = useRef(null)
@@ -174,11 +189,21 @@ export default function ChatPanel() {
     abort.current = ctrl
     const ctx = { model, settings, todayMs: status.loadedAt?.getTime() ?? 0 }
     let body = { user: { id: user.id, username: user.username }, previous_response_id: prevId.current, message: text }
+    // collected for the history row (rca_chat_logs)
+    // oxlint-disable-next-line react/purity -- runs inside the send() event handler, not during render
+    const startedAt = Date.now()
+    const toolsUsed = []
+    let answer = ''
+    let logStatus = 'ok'
+    let logError = null
     try {
       for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
         let next = null
         for await (const ev of chatRequest(body, ctrl.signal)) {
-          if (ev.type === 'delta') patchLast((m) => ({ ...m, text: m.text + ev.text, status: null }))
+          if (ev.type === 'delta') {
+            answer += ev.text
+            patchLast((m) => ({ ...m, text: m.text + ev.text, status: null }))
+          }
           else if (ev.type === 'error') throw new Error(ev.message)
           else if (ev.type === 'done') prevId.current = ev.response_id
           else if (ev.type === 'tool_calls') {
@@ -191,6 +216,7 @@ export default function ChatPanel() {
               } catch {
                 // runTool reports the bad JSON back to the model
               }
+              toolsUsed.push(c.name)
               patchLast((m) => ({ ...m, status: toolLabel(c.name, args) }))
               outputs.push({ call_id: c.call_id, output: runTool(c.name, c.arguments, ctx) })
             }
@@ -203,20 +229,39 @@ export default function ChatPanel() {
       }
       patchLast((m) => ({ ...m, status: null, text: m.text || '_(no answer received)_' }))
     } catch (e) {
-      if (e.name === 'AbortError') patchLast((m) => ({ ...m, status: null, text: m.text || '_(stopped)_' }))
-      else {
+      if (e.name === 'AbortError') {
+        logStatus = 'stopped'
+        patchLast((m) => ({ ...m, status: null, text: m.text || '_(stopped)_' }))
+      } else {
+        logStatus = 'error'
+        logError = e.message
         patchLast((m) => ({ ...m, status: null, error: e.message }))
         prevId.current = null // start a fresh thread after an error
       }
     } finally {
       setBusy(false)
       abort.current = null
+      saveChatLog({
+        user_id: user.id ?? null,
+        username: user.username ?? null,
+        firm: user.firm || null,
+        role: user.role || null,
+        conversation_id: conversationId.current,
+        question: text,
+        answer: answer || null,
+        tools_used: toolsUsed.length ? [...new Set(toolsUsed)] : null,
+        status: logStatus,
+        error: logError,
+        duration_ms: Date.now() - startedAt,
+        page: window.location.pathname + window.location.search,
+      })
     }
   }
 
   const reset = () => {
     abort.current?.abort()
     prevId.current = null
+    conversationId.current = newConversationId()
     setMessages([])
   }
 

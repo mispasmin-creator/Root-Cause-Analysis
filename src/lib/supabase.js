@@ -32,6 +32,7 @@ export const TABLES = {
   login: 'login',
   kyc: 'kyc',
   reviews: 'rca_reviews',
+  chatLogs: 'rca_chat_logs',
   orderReceipt: 'ORDER RECEIPT',
 }
 
