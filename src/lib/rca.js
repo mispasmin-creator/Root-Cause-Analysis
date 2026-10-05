@@ -975,3 +975,220 @@ export function aggregateTotals(orders) {
     revisedOrders: active.filter((o) => o.compositions.length > 1).length,
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Business dashboard — profit/loss, product margin, lab quality, trends, people, delivery, data quality
+// ---------------------------------------------------------------------------------------------
+// Sales / mfg cost come from actual_production (saved by Production-FMS at production entry):
+//   selling_price_total = product_rate × FG,  manufacturing_cost_used = Mfg cost/MT × FG.
+// RM cost uses the kg-corrected actual (correctActualCost). Batches whose cost is > 3× or < ⅓ of the
+// composition cost are DATA ERRORS (e.g. DO-501 ₹1.55 Cr for a ₹5 lakh batch) and are kept out of every
+// ₹ figure — they are listed separately so nothing is silently dropped.
+
+export const COST_ERROR_RATIO = 3
+
+const actualRm = (b) => b.cost.actualCorrected ?? b.cost.actual
+
+/** true when the saved RM cost cannot be right (way off the composition cost) */
+export function isCostError(b) {
+  const e = b.cost.expected
+  const a = actualRm(b)
+  if (!(e > 0) || !(a > 0)) return false
+  const r = a / e
+  return r > COST_ERROR_RATIO || r < 1 / COST_ERROR_RATIO
+}
+
+const monthKey = (v) => {
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? null : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+/**
+ * @param orders  model.orders (already firm-filtered)
+ * @param todayMs today's date in ms (passed in so this stays pure)
+ */
+export function aggregateBusiness(orders, todayMs) {
+  const all = orders.flatMap((o) => o.batches.map((b) => ({ b, o })))
+
+  // ---- money (clean batches only) ----
+  const money = all.filter(({ b }) => num(b.raw.selling_price_total) > 0 && b.cost.expected > 0 && actualRm(b) > 0)
+  const costErrors = money.filter(({ b }) => isCostError(b))
+  const clean = money.filter(({ b }) => !isCostError(b))
+  const row = ({ b, o }) => {
+    const sales = num(b.raw.selling_price_total)
+    const mfg = num(b.raw.manufacturing_cost_used)
+    const expRm = b.cost.expected
+    const actRm = actualRm(b)
+    return { b, o, sales, mfg, expRm, actRm, expProfit: sales - expRm - mfg, actProfit: sales - actRm - mfg }
+  }
+  const rows = clean.map(row)
+  const sum = (arr, f) => arr.reduce((s, x) => s + f(x), 0)
+  const sales = sum(rows, (r) => r.sales)
+  const profit = {
+    batches: rows.length,
+    fg: sum(rows, (r) => r.b.fgQty),
+    sales,
+    expRm: sum(rows, (r) => r.expRm),
+    actRm: sum(rows, (r) => r.actRm),
+    mfg: sum(rows, (r) => r.mfg),
+    expProfit: sum(rows, (r) => r.expProfit),
+    actProfit: sum(rows, (r) => r.actProfit),
+  }
+  profit.margin = sales ? (profit.actProfit / sales) * 100 : null
+  profit.expMargin = sales ? (profit.expProfit / sales) * 100 : null
+  profit.deviationImpact = profit.actProfit - profit.expProfit // < 0 = money lost by not following composition
+  const sev = (s) => {
+    const x = rows.filter((r) => r.b.severity === s)
+    const e = sum(x, (r) => r.expRm)
+    return { batches: x.length, extraRm: sum(x, (r) => r.actRm - r.expRm), extraPct: e ? (sum(x, (r) => r.actRm - r.expRm) / e) * 100 : null }
+  }
+  profit.bySeverity = { ok: sev('ok'), minor: sev('minor'), major: sev('major') }
+
+  // Costing-stage margin (final ₹/MT incl. manufacturing, approved in /costing)
+  const costed = clean.filter(({ b }) => b.cost.costingPerMt > 0)
+  const cSales = sum(costed, ({ b }) => num(b.raw.selling_price_total))
+  const cCost = sum(costed, ({ b }) => b.cost.costingPerMt * b.fgQty)
+  profit.costing = { batches: costed.length, sales: cSales, cost: cCost, profit: cSales - cCost, margin: cSales ? ((cSales - cCost) / cSales) * 100 : null }
+
+  // ---- loss orders ----
+  const byOrder = new Map()
+  for (const r of rows) {
+    const e = byOrder.get(r.o.key) || { order: r.o, batches: 0, lossBatches: 0, sales: 0, profit: 0, loss: 0 }
+    e.batches++
+    e.sales += r.sales
+    e.profit += r.actProfit
+    if (r.actProfit < 0) {
+      e.lossBatches++
+      e.loss += r.actProfit
+    }
+    byOrder.set(r.o.key, e)
+  }
+  const lossOrders = [...byOrder.values()].filter((e) => e.lossBatches > 0).sort((a, b) => a.loss - b.loss)
+  const lossTotal = { batches: rows.filter((r) => r.actProfit < 0).length, amount: sum(rows.filter((r) => r.actProfit < 0), (r) => r.actProfit) }
+
+  // ---- product margin ----
+  const prod = new Map()
+  for (const r of rows) {
+    const k = String(r.o.product).trim()
+    const e = prod.get(k) || { product: k, batches: 0, fg: 0, sales: 0, profit: 0 }
+    e.batches++
+    e.fg += r.b.fgQty
+    e.sales += r.sales
+    e.profit += r.actProfit
+    prod.set(k, e)
+  }
+  const products = [...prod.values()].map((e) => ({ ...e, margin: e.sales ? (e.profit / e.sales) * 100 : null })).sort((a, b) => a.margin - b.margin)
+
+  // ---- lab quality ----
+  const JUDGED = ['ok', 'minor', 'major']
+  const labProps = new Map()
+  let labChecks = 0
+  let labOk = 0
+  for (const { b } of all)
+    for (const i of b.labCheck?.items || []) {
+      if (!JUDGED.includes(i.status)) continue
+      const e = labProps.get(i.key) || { key: i.key, label: i.label, checks: 0, ok: 0 }
+      e.checks++
+      labChecks++
+      if (i.status === 'ok') {
+        e.ok++
+        labOk++
+      }
+      labProps.set(i.key, e)
+    }
+  const labRate = (list) => {
+    const c = sum(list, ({ b }) => b.labCheck.checked)
+    return { batches: list.length, rate: c ? (sum(list, ({ b }) => b.labCheck.checked - b.labCheck.out) / c) * 100 : null }
+  }
+  const labJudged = all.filter(({ b }) => b.labCheck?.checked >= 3)
+  const lab = {
+    checks: labChecks,
+    ok: labOk,
+    rate: labChecks ? (labOk / labChecks) * 100 : null,
+    props: [...labProps.values()].map((p) => ({ ...p, rate: (p.ok / p.checks) * 100 })),
+    mixOk: labRate(labJudged.filter(({ b }) => b.severity === 'ok')),
+    mixMajor: labRate(labJudged.filter(({ b }) => b.severity === 'major')),
+  }
+
+  // ---- monthly trend ----
+  const mon = new Map()
+  for (const r of all) {
+    const k = monthKey(r.b.date)
+    if (!k) continue
+    const e = mon.get(k) || { month: k, batches: 0, fg: 0, ok: 0, judged: 0, shift: 0, sales: 0, profit: 0 }
+    e.batches++
+    e.fg += r.b.fgQty
+    if (r.b.vsStandard) {
+      e.judged++
+      e.shift += r.b.vsStandard.shift
+      if (r.b.severity === 'ok') e.ok++
+    }
+    mon.set(k, e)
+  }
+  for (const r of rows) {
+    const e = mon.get(monthKey(r.b.date))
+    if (e) {
+      e.sales += r.sales
+      e.profit += r.actProfit
+    }
+  }
+  const months = [...mon.values()]
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .map((e) => ({ ...e, okRate: e.judged ? (e.ok / e.judged) * 100 : null, avgShift: e.judged ? e.shift / e.judged : null, margin: e.sales ? (e.profit / e.sales) * 100 : null }))
+
+  // ---- supervisors & firms ----
+  const group = (keyOf) => {
+    const m = new Map()
+    for (const { b, o } of all) {
+      const k = keyOf(b, o)
+      if (!k) continue
+      const e = m.get(k) || { name: k, batches: 0, fg: 0, judged: 0, ok: 0, major: 0, shift: 0 }
+      e.batches++
+      e.fg += b.fgQty
+      if (b.vsStandard) {
+        e.judged++
+        e.shift += b.vsStandard.shift
+        if (b.severity === 'ok') e.ok++
+        if (b.severity === 'major') e.major++
+      }
+      m.set(k, e)
+    }
+    return [...m.values()].map((e) => ({ ...e, majorRate: e.judged ? (e.major / e.judged) * 100 : null, avgShift: e.judged ? e.shift / e.judged : null }))
+  }
+  const supervisors = group((b) => {
+    const s = String(b.supervisor ?? '').trim()
+    return s && s !== '—' ? s : null
+  }).sort((a, b) => b.majorRate - a.majorRate)
+  const firms = group((b, o) => String(o.firm || '').trim() || null).sort((a, b) => b.fg - a.fg)
+
+  // ---- delivery pending ----
+  const open = orders
+    .filter((o) => o.orderQty > 0 && !o.cancelled && o.producedQty < o.orderQty * 0.99)
+    .map((o) => {
+      const due = o.expectedDelivery ? new Date(o.expectedDelivery).getTime() : null
+      return { order: o, pending: o.orderQty - o.producedQty, due, overdueDays: due && due < todayMs ? Math.floor((todayMs - due) / 86400000) : 0 }
+    })
+  const overdue = open.filter((x) => x.overdueDays > 0).sort((a, b) => b.overdueDays - a.overdueDays)
+  const delivery = {
+    open: open.length,
+    pendingMt: sum(open, (x) => x.pending),
+    overdue: overdue.length,
+    overdueMt: sum(overdue, (x) => x.pending),
+    overdueList: overdue,
+  }
+
+  // ---- data quality ----
+  // one composition can be linked to several order lines → count each once
+  const uniqueComps = [...new Map(orders.flatMap((o) => o.compositions).map((c) => [c.id, c])).values()]
+  const dataQuality = {
+    kgEntries: all.filter(({ b }) => b.unitFixes?.length).length,
+    costErrors: costErrors.map(({ b, o }) => ({ b, o, expected: b.cost.expected, actual: actualRm(b) })).sort((a, b) => b.actual / b.expected - a.actual / a.expected),
+    noComposition: all.filter(({ b }) => !b.standard).length,
+    noLabTarget: uniqueComps.filter((c) => !String(c.raw['Expected WC %'] ?? '').trim()).length,
+    compositions: uniqueComps.length,
+    notTested: all.filter(({ b }) => !b.labCheck?.tested).length,
+    batches: all.length,
+  }
+
+  return { profit, lossOrders, lossTotal, products, lab, months, supervisors, firms, delivery, dataQuality }
+}

@@ -16,13 +16,18 @@ export default function ReviewForm({ batch, order, onSaved }) {
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
+  const [saved, setSaved] = useState(false) // explicit confirmation — the form clearing alone looked like "nothing happened"
+  const set = (k) => (e) => {
+    setSaved(false)
+    setForm((f) => ({ ...f, [k]: e.target.value }))
+  }
 
   const submit = async (e) => {
     e.preventDefault()
     if (!form.root_cause_category) return setError('Choose a root-cause category')
     setSaving(true)
     setError(null)
+    setSaved(false)
     const { error: err } = await productionDb.from(TABLES.reviews).insert({
       ...form,
       actual_production_id: batch.id,
@@ -39,12 +44,14 @@ export default function ReviewForm({ batch, order, onSaved }) {
     setSaving(false)
     if (err) return setError(err.message)
     setForm({ root_cause_category: '', root_cause_detail: '', corrective_action: '', preventive_action: '', status: 'Open' })
+    setSaved(true)
     onSaved?.()
   }
 
   return (
     <form onSubmit={submit} className="stack" style={{ gap: 12 }}>
       {error && <Notice kind="err">{error}</Notice>}
+      {saved && <Notice kind="info">Root cause saved ✓ — it is listed above and the batch is now marked Reviewed.</Notice>}
       <div className="field">
         <label htmlFor="rc-cat">Root cause *</label>
         <select id="rc-cat" className="select" value={form.root_cause_category} onChange={set('root_cause_category')}>

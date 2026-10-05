@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useData } from '../context/DataContext.jsx'
 import { Loader, Notice } from './ui.jsx'
+import ChatPanel from './ChatPanel.jsx'
 import {
   IconCompare,
   IconDashboard,
@@ -99,6 +100,7 @@ export default function Layout() {
           {!model && status.loading ? <Loader /> : model ? <Outlet /> : null}
         </main>
       </div>
+      <ChatPanel />
     </div>
   )
 }

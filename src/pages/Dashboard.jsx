@@ -5,9 +5,11 @@ import { fmtDate, fmtNum } from '../lib/format.js'
 import { firmLabel } from '../lib/normalize.js'
 import { Badge, Empty, Kpi, SevBar, SeverityBadge } from '../components/ui.jsx'
 import { IconArrowRight } from '../components/Icons.jsx'
+import { aggregateBusiness } from '../lib/rca.js'
+import { OpsSection, PeopleSection, ProfitSection, QualitySection } from '../components/BusinessSections.jsx'
 
 export default function Dashboard() {
-  const { model, settings } = useData()
+  const { model, settings, status } = useData()
   const t = model.totals
 
   const attention = useMemo(
@@ -27,6 +29,10 @@ export default function Dashboard() {
         .slice(0, 8),
     [model],
   )
+
+  // profit / quality / people / delivery figures; "today" = last data sync, so overdue days match the data shown
+  const syncedAt = status.loadedAt?.getTime() ?? 0
+  const biz = useMemo(() => aggregateBusiness(model.orders, syncedAt), [model, syncedAt])
 
   const topMaterials = model.materials.filter((m) => m.batches >= 3).slice(0, 8)
   const pct = (n) => (t.judged ? `${((n / t.judged) * 100).toFixed(0)}%` : '—')
@@ -54,6 +60,8 @@ export default function Dashboard() {
         <Kpi label="Avg mix shift" value={`${t.avgShift.toFixed(1)}%`} sub="share of mix off-standard" />
         <Kpi label="Unreviewed major" value={fmtNum(t.unreviewedMajor, 0)} sub={`${t.revisedOrders} orders with revised composition`} tone={t.unreviewedMajor ? 'minor' : 'ok'} />
       </div>
+
+      <ProfitSection biz={biz} />
 
       <div className="grid grid-2">
         <section className="card">
@@ -187,6 +195,10 @@ export default function Dashboard() {
           </div>
         )}
       </section>
+
+      <QualitySection biz={biz} />
+      <PeopleSection biz={biz} />
+      <OpsSection biz={biz} />
     </div>
   )
 }

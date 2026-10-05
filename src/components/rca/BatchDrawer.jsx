@@ -11,6 +11,12 @@ import ReviewForm from './ReviewForm.jsx'
 export default function BatchDrawer({ order, batch, onClose }) {
   const { reviews, refreshReviews, reload } = useData()
 
+  // the table may have been created after the app loaded (migration run later) — re-check instead of needing a page refresh
+  useEffect(() => {
+    if (!reviews.available) refreshReviews()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', onKey)

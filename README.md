@@ -19,6 +19,23 @@ npm run dev          # http://localhost:5173 — log in with your Production-FMS
 One-time: run [supabase/migrations/001_rca_reviews.sql](supabase/migrations/001_rca_reviews.sql) in the Production-FMS SQL
 editor to enable saving root causes (the app is read-only until then).
 
+## Chatbot (RCA Assistant)
+
+Bottom-right **Ask RCA** button on every page. It answers from this app's data using OpenAI.
+
+1. In `.env` (see `.env.example`) set — **without** `VITE_`:
+   ```
+   OPENAI_API_KEY=sk-...
+   OPENAI_MODEL=gpt-6.1-sol
+   OPENAI_REASONING=low
+   ```
+2. `npm run dev` → the chatbot works locally (`/api/chat` is served by Vite).
+3. Deploy on Vercel: add the same three vars **and** `VITE_PRODUCTION_SUPABASE_URL` / `_ANON_KEY` (used to verify the
+   user) under Project → Settings → Environment Variables, then redeploy. `api/chat.js` becomes the server function.
+4. Set a monthly usage limit in the OpenAI dashboard.
+
+Note: questions and the data the bot looks up are sent to OpenAI.
+
 ## Docs (read in this order)
 
 | File | What |
