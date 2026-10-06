@@ -4,11 +4,52 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useData } from '../context/DataContext.jsx'
-import { runTool, toolLabel } from '../lib/chatTools.js'
+import { buildExport, runTool, toolLabel } from '../lib/chatTools.js'
+import { downloadBlob, toCsv, toXlsx } from '../lib/xlsx.js'
 import { productionDb, TABLES } from '../lib/supabase.js'
-import { IconX } from './Icons.jsx'
+import { IconChat, IconDownload, IconX } from './Icons.jsx'
 
 const MAX_TOOL_ROUNDS = 6
+
+// Chat is kept in this browser (per user) so it survives a page refresh. Only text is stored — export files are rebuilt
+// from their arguments when the download button is clicked, so they always reflect the current data.
+const STORE_PREFIX = 'rca_chat_v1_'
+const MAX_STORED_MESSAGES = 80
+const storeKey = (u) => STORE_PREFIX + (u?.id || u?.username || 'anon')
+function loadChat(user) {
+  try {
+    const raw = localStorage.getItem(storeKey(user))
+    if (!raw) return null
+    const d = JSON.parse(raw)
+    // an answer that was still streaming when the page was closed
+    const messages = (d.messages || []).map((m) => (m.status ? { ...m, status: null, text: m.text || '_(interrupted — please ask again)_' } : m))
+    return { ...d, messages }
+  } catch {
+    return null
+  }
+}
+function storeChat(user, data) {
+  try {
+    localStorage.setItem(storeKey(user), JSON.stringify(data))
+  } catch {
+    // storage full / blocked — chat still works, just won't survive a refresh
+  }
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    ta.remove()
+    return ok
+  }
+}
 
 const newConversationId = () => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `c${Date.now()}${Math.random().toString(36).slice(2)}`)
 
@@ -156,11 +197,13 @@ export default function ChatPanel() {
   const { model, settings, status } = useData()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
-  const [messages, setMessages] = useState([]) // {role:'user'|'assistant', text, status?, error?}
+  const [saved] = useState(() => loadChat(user)) // restored chat (survives refresh)
+  const [messages, setMessages] = useState(() => saved?.messages || []) // {role, text, status?, error?, files?}
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
-  const prevId = useRef(null)
-  const conversationId = useRef(newConversationId())
+  const prevId = useRef(saved?.prevId || null)
+  const conversationId = useRef(saved?.conversationId || newConversationId())
+  const [copied, setCopied] = useState(null)
   const abort = useRef(null)
   const listRef = useRef(null)
   const inputRef = useRef(null)
@@ -171,6 +214,15 @@ export default function ChatPanel() {
   useEffect(() => {
     if (open) inputRef.current?.focus()
   }, [open])
+  // persist after every change (streaming text included, so a refresh mid-answer keeps what arrived)
+  useEffect(() => {
+    if (!user) return
+    storeChat(user, {
+      messages: messages.slice(-MAX_STORED_MESSAGES),
+      prevId: prevId.current,
+      conversationId: conversationId.current,
+    })
+  }, [messages, busy, user])
 
   const patchLast = (fn) =>
     setMessages((ms) => {
@@ -218,7 +270,17 @@ export default function ChatPanel() {
               }
               toolsUsed.push(c.name)
               patchLast((m) => ({ ...m, status: toolLabel(c.name, args) }))
-              outputs.push({ call_id: c.call_id, output: runTool(c.name, c.arguments, ctx) })
+              const output = runTool(c.name, c.arguments, ctx)
+              if (c.name === 'export_data') {
+                // show a download button under this answer; the file is built when the button is clicked
+                try {
+                  const res = JSON.parse(output)
+                  if (res.ok) patchLast((m) => ({ ...m, files: [...(m.files || []), { name: res.file, format: res.format, rows: res.rows, sheets: res.sheets, args }] }))
+                } catch {
+                  // model gets the error text; nothing to attach
+                }
+              }
+              outputs.push({ call_id: c.call_id, output })
             }
             patchLast((m) => ({ ...m, status: 'Writing the answer…' }))
             next = { user: body.user, previous_response_id: ev.response_id, tool_outputs: outputs }
@@ -265,6 +327,21 @@ export default function ChatPanel() {
     setMessages([])
   }
 
+  const downloadFile = (f) => {
+    const res = buildExport(f.args, { model, settings, todayMs: status.loadedAt?.getTime() ?? 0 })
+    if (res.error) return window.alert(res.error)
+    // Excel keeps every sheet + colours; CSV can hold only the first sheet
+    const blob = f.format === 'csv' ? toCsv(res.sheets[0].columns, res.sheets[0].rows) : toXlsx(res.sheets)
+    downloadBlob(blob, `${res.filename}.${f.format}`)
+  }
+
+  const copyAnswer = async (i, text) => {
+    if (await copyText(text)) {
+      setCopied(i)
+      setTimeout(() => setCopied((c) => (c === i ? null : c)), 1500)
+    }
+  }
+
   const goto = (href) => {
     navigate(href)
     if (window.matchMedia('(max-width: 640px)').matches) setOpen(false)
@@ -275,11 +352,12 @@ export default function ChatPanel() {
   return (
     <>
       {!open && (
-        <button className="chat-fab" onClick={() => setOpen(true)} aria-label="Open RCA assistant" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-          <span>Ask RCA</span>
+        <button className="chat-fab" onClick={() => setOpen(true)} aria-label="Open RCA assistant" title="Ask RCA" type="button">
+          <span className="chat-fab-ring" aria-hidden="true" />
+          <IconChat className="chat-fab-icon" />
+          <span className="chat-fab-tip" aria-hidden="true">
+            Ask RCA
+          </span>
         </button>
       )}
       {open && (
@@ -334,6 +412,24 @@ export default function ChatPanel() {
                       </div>
                     )}
                     {m.error && <div className="chat-error">{m.error}</div>}
+                    {m.files?.length > 0 && (
+                      <div className="chat-files">
+                        {m.files.map((f, fi) => (
+                          <button key={fi} type="button" className="chat-file" onClick={() => downloadFile(f)} disabled={!model}>
+                            <IconDownload />
+                            <span className="truncate">{f.name}</span>
+                            <span className="faint">{f.sheets?.length > 1 ? `${f.sheets.length} sheets` : `${f.rows} rows`}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {m.text && !m.status && (
+                      <div className="chat-actions">
+                        <button type="button" className="chat-act" onClick={() => copyAnswer(i, m.text)} title="Copy answer">
+                          {copied === i ? '✓ Copied' : 'Copy'}
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -351,7 +447,7 @@ export default function ChatPanel() {
               ref={inputRef}
               className="textarea"
               rows={1}
-              placeholder={model ? 'Type your question… (Enter = send)' : 'Loading data…'}
+              placeholder={model ? 'Type your question…' : 'Loading data…'}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {

@@ -19,7 +19,7 @@ export const TOOL_DEFS = [
     firm: str('PMMPL, RKL or PURAB. null = all firms.'),
     severity: { type: ['string', 'null'], enum: ['major', 'minor', 'ok', 'none', null], description: 'Filter by overall batch status. null = any.' },
     sort: { type: ['string', 'null'], enum: ['recent', 'shift', 'batches', 'unreviewed', null], description: 'recent (default), highest mix shift, most batches, most unreviewed major.' },
-    limit: int('Max rows (default 10, max 25).'),
+    limit: int('Max rows (default 10, max 50).'),
   }),
   fn(
     'get_order',
@@ -50,11 +50,41 @@ export const TOOL_DEFS = [
         type: 'string',
         enum: ['overview', 'profit', 'loss_orders', 'product_margin', 'lab_quality', 'monthly_trend', 'supervisors', 'firms', 'delivery', 'data_quality'],
       },
-      limit: int('Max rows for list sections (default 10, max 25).'),
+      limit: int('Max rows for list sections (default 10, max 50).'),
     },
   ),
   fn('material_stats', 'How often raw materials are off their composition % across all batches (deviation rate, bias, substitutions).', {
     name: str('Material name to look up (partial match). null = top materials by deviation.'),
-    limit: int('Max rows (default 10, max 25).'),
+    limit: int('Max rows (default 10, max 50).'),
   }),
+  fn(
+    'export_data',
+    `Create a downloadable Excel (default) or CSV file when the user asks to export / download / "excel" / "csv" / "sheet".
+The file appears as a download button in the chat. Pick the dataset that matches the app view the user means:
+- order_report: everything for one order (Batch matrix, Deviation, Batches, Lab, Cost sheets) — "full / complete / summary of all batches"
+- order_matrix: "all batches" / "batch data" / "batch matrix" of one order — materials × batches like the app, coloured by status
+- batch_compare: two batches compared (do_no+batch vs b_do_no+b_batch) — Raw material | Base | Compare | Δ | Deviation | Status
+- batch_lines: one batch vs its composition (same columns as batch_compare)
+- order_lab: lab results vs target like the Lab tab; order_cost: cost per batch like the Cost tab
+- order_batches: simple batch list; lab_results: long list of every lab result
+- company-wide: orders, loss_orders, product_margin, monthly_trend, supervisors, firms, delivery_overdue, lab_by_test, materials, cost_errors`,
+    {
+      dataset: {
+        type: 'string',
+        enum: ['order_report', 'order_matrix', 'batch_compare', 'batch_lines', 'order_lab', 'order_cost', 'order_batches', 'lab_results', 'orders', 'loss_orders', 'product_margin', 'monthly_trend', 'supervisors', 'firms', 'delivery_overdue', 'lab_by_test', 'materials', 'cost_errors'],
+      },
+      format: { type: 'string', enum: ['xlsx', 'csv'], description: 'xlsx for Excel (default; keeps colours and multiple sheets), csv only when the user says CSV.' },
+      do_no: str('DO number for order-level datasets (order A for batch_compare). null otherwise.'),
+      product: str('Product if the DO has several products. null otherwise.'),
+      batch: int('Batch number (A for batch_compare, or the batch for batch_lines). null otherwise.'),
+      job_card: str('Job card instead of batch number. null otherwise.'),
+      b_do_no: str('batch_compare: DO of batch B (null = same DO as A).'),
+      b_batch: int('batch_compare: batch number B. null if b_job_card is given.'),
+      b_job_card: str('batch_compare: job card of batch B. null if b_batch is given.'),
+      query: str('Search text for orders / materials. null = all.'),
+      firm: str('PMMPL, RKL or PURAB filter. null = all.'),
+      severity: { type: ['string', 'null'], enum: ['major', 'minor', 'ok', 'none', null], description: 'Order status filter for orders. null = any.' },
+      filename: str('Short file name without extension. null = automatic.'),
+    },
+  ),
 ]

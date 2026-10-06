@@ -1040,27 +1040,119 @@ a.list-item:hover {
 /* ---------- chatbot (components/ChatPanel.jsx) ---------- */
 .chat-fab {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
+  right: 22px;
+  bottom: 22px;
   z-index: 45;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 16px;
-  border-radius: 999px;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
   border: 0;
-  background: var(--brand);
+  padding: 0;
+  display: grid;
+  place-items: center;
   color: #fff;
-  font-weight: 600;
   cursor: pointer;
-  box-shadow: var(--shadow-lg);
+  background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--brand) 70%, #fff) 0%, var(--brand) 55%, var(--brand-strong) 100%);
+  box-shadow:
+    0 8px 22px color-mix(in srgb, var(--brand) 45%, transparent),
+    0 2px 6px hsl(0 0% 0% / 0.18);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+  animation: chatfab-in 0.35s ease-out backwards; /* backwards: does not hold transform, so :hover still works */
 }
 .chat-fab:hover {
-  background: var(--brand-strong);
+  transform: translateY(-2px) scale(1.06);
+  box-shadow:
+    0 12px 28px color-mix(in srgb, var(--brand) 55%, transparent),
+    0 3px 8px hsl(0 0% 0% / 0.2);
 }
-.chat-fab svg {
-  width: 18px;
-  height: 18px;
+.chat-fab:active {
+  transform: scale(0.96);
+}
+.chat-fab:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--brand) 45%, transparent);
+  outline-offset: 3px;
+}
+.chat-fab-icon {
+  width: 27px;
+  height: 27px;
+  position: relative;
+  animation: chatfab-float 3.2s ease-in-out infinite;
+}
+/* soft pulse ring behind the button */
+.chat-fab-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--brand);
+  opacity: 0.35;
+  z-index: -1;
+  animation: chatfab-pulse 2.6s ease-out infinite;
+}
+/* hover tooltip on the left */
+.chat-fab-tip {
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translate(6px, -50%);
+  white-space: nowrap;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.chat-fab:hover .chat-fab-tip,
+.chat-fab:focus-visible .chat-fab-tip {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+@keyframes chatfab-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+  70% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+}
+@keyframes chatfab-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+@keyframes chatfab-in {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-fab,
+  .chat-fab-icon,
+  .chat-fab-ring {
+    animation: none;
+  }
 }
 .chat-panel {
   position: fixed;
@@ -1087,6 +1179,8 @@ a.list-item:hover {
   .chat-fab {
     right: 16px;
     bottom: 16px;
+    width: 54px;
+    height: 54px;
   }
 }
 .chat-head {
@@ -1249,3 +1343,58 @@ a.list-item:hover {
   max-height: 120px;
   resize: none;
 }
+
+/* chat: export files + answer actions */
+.chat-files {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chat-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--brand) 40%, var(--border));
+  border-radius: 8px;
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  font-weight: 600;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.chat-file:hover {
+  border-color: var(--brand);
+}
+.chat-file svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.chat-file .faint {
+  margin-left: auto;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.chat-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.chat-act {
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.chat-act:hover {
+  color: var(--brand);
+  background: var(--surface-2);
+}
+

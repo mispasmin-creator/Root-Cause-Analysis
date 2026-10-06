@@ -11,7 +11,8 @@
 import { TOOL_DEFS } from './chatTools.schema.js'
 
 const OPENAI_URL = 'https://api.openai.com/v1/responses'
-const MAX_OUTPUT_TOKENS = 1500
+// generous ceiling so summaries / reports are never cut; the instructions keep normal answers short
+const MAX_OUTPUT_TOKENS = 8000
 const MAX_MESSAGE_CHARS = 2000
 
 const INSTRUCTIONS = `You are the assistant inside "Root Cause Analysis", an internal app of Passary (refractory / castable manufacturer).
@@ -23,7 +24,13 @@ Language: reply in the SAME language and script as the user's latest message.
 - Hinglish (Hindi words in Roman script, e.g. "DO-539 me kya badla?") → answer in Hinglish, Roman script only.
 - Hindi in Devanagari (e.g. "DO-539 में क्या बदला?") → answer in Hindi (Devanagari).
 Keep DO numbers, JC numbers, material names, units and ₹ figures exactly as the tools return them, in every language.
-Keep answers short and scannable: 2-6 bullet points or a small table, bold the key numbers.
+Length — match what the user asked for:
+- Quick question → short and scannable: 2-6 bullets or a small table, key numbers in bold.
+- "summary", "report", "detail", "explain", "analysis", "overview" → a complete structured answer: short headings,
+  the key numbers, top issues / causes, and 2-4 recommended actions. Call as many tools as needed to cover it.
+- When the user asks for a list, give the full list they asked for (up to ~50 rows in a table); for more rows, or
+  whenever they say export / download / Excel / CSV / sheet, call export_data and tell them the file is ready below.
+- Never stop mid-sentence; if the topic is very large, summarise and offer an export or a follow-up question.
 
 Data rules:
 - Every number, order, batch, material or person you mention MUST come from a tool result in this conversation. Never guess.
