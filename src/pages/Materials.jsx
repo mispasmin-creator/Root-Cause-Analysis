@@ -3,6 +3,8 @@ import { useData } from '../context/DataContext.jsx'
 import { exportCsv } from '../lib/exportCsv.js'
 import { Badge, Empty } from '../components/ui.jsx'
 import { IconDownload, IconSearch } from '../components/Icons.jsx'
+import Pagination from '../components/Pagination.jsx'
+import { usePagination } from '../lib/pagination.js'
 
 const COLS = [
   { key: 'name', label: 'Raw material' },
@@ -33,11 +35,16 @@ export default function Materials() {
       })
   }, [model, q, sort, minBatches])
 
+  const pg = usePagination(rows.length)
+
   const head = (c) => (
     <th
       key={c.key}
       className={`sortable ${c.r ? 'r' : ''}`}
-      onClick={() => setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : -1 }))}
+      onClick={() => {
+        setSort((s) => ({ key: c.key, dir: s.key === c.key ? -s.dir : -1 }))
+        pg.setPage(1)
+      }}
       aria-sort={sort.key === c.key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}
     >
       {c.label} {sort.key === c.key ? (sort.dir > 0 ? '▲' : '▼') : ''}
@@ -79,11 +86,17 @@ export default function Materials() {
         <div className="card-head">
           <div className="search">
             <IconSearch />
-            <input className="input" placeholder="Search material or product…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search materials" />
+            <input className="input" placeholder="Search material or product…" value={q} onChange={(e) => {
+              setQ(e.target.value)
+              pg.setPage(1)
+            }} aria-label="Search materials" />
           </div>
           <label className="row muted" style={{ fontSize: 13 }}>
             Min batches
-            <select className="select" value={minBatches} onChange={(e) => setMinBatches(Number(e.target.value))}>
+            <select className="select" value={minBatches} onChange={(e) => {
+              setMinBatches(Number(e.target.value))
+              pg.setPage(1)
+            }}>
               {[1, 3, 5, 10, 25].map((n) => (
                 <option key={n}>{n}</option>
               ))}
@@ -102,7 +115,7 @@ export default function Materials() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((m) => (
+                {pg.slice(rows).map((m) => (
                   <tr key={m.key}>
                     <td style={{ fontWeight: 600 }}>{m.name}</td>
                     <td className="r num">{m.batches}</td>
@@ -137,6 +150,7 @@ export default function Materials() {
             </table>
           </div>
         )}
+        <Pagination pg={pg} label="materials" />
       </section>
     </div>
   )

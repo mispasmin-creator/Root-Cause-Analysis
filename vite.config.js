@@ -19,6 +19,9 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {
     plugins: [react(), chatApi(env)],
+    // fixed ports: the login is stored per address (origin), so a port change (5173 → 5174) would ask to log in again
+    server: { port: 5173, strictPort: true },
+    preview: { port: 4173, strictPort: true },
     build: {
       // react + react-router + supabase-js ≈ 560 kB minified (160 kB gzip) — fine for an internal tool
       chunkSizeWarningLimit: 700,

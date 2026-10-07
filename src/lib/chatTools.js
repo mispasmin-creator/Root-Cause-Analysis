@@ -21,6 +21,8 @@ const nm = (o) => (k) => o.names[k] || k
 function orderBrief(o) {
   return {
     do_no: o.doNo,
+    po_no: o.poNo || null,
+    po_date: day(o.poDate),
     product: o.product,
     party: o.party || null,
     firm: firmLabel(o.firm),
@@ -93,7 +95,7 @@ function search_orders(args, { model }) {
   if (args.severity) list = list.filter((o) => o.severity === args.severity)
   if (q)
     list = list.filter((o) =>
-      [o.doNo, o.product, o.party, ...o.batches.map((b) => b.jobCard), ...o.compositions.map((c) => c.no)]
+      [o.doNo, o.poNo, o.product, o.party, ...o.batches.map((b) => b.jobCard), ...o.compositions.map((c) => c.no)]
         .join(' ')
         .toLowerCase()
         .includes(q),
@@ -317,12 +319,13 @@ export const EXPORT_MAX_ROWS = 5000
 
 const EXPORT_DATASETS = {
   orders: 'Orders with batch status (filters: query, firm, severity)',
-  order_report: 'Full workbook of one order: Batch matrix + Deviation + Batches + Lab + Cost sheets (needs do_no)',
+  order_report: 'Full workbook of one order: Production sheet + Batch matrix + Deviation + Batches + Lab report + Cost sheets (needs do_no)',
+  production_sheet: 'Plant production sheet of one order: compositions + one row per production group with remarks (needs do_no)',
   order_matrix: 'Batch matrix of one order like the app (materials × batches, coloured) + Deviation + Batches sheets (needs do_no)',
   order_batches: 'Batch list of one order (needs do_no)',
   batch_compare: 'Batch vs batch like the app: Raw material | Base | Compare | Δ | Deviation | Status (do_no+batch vs b_do_no+b_batch)',
   batch_lines: 'One batch vs its composition, Batch-vs-batch format (needs do_no + batch/job_card)',
-  order_lab: 'Lab tab of one order: Test | Your target | Matched | B1..Bn (needs do_no)',
+  order_lab: 'Production & lab report sheet of one order: one row per batch, LAB TEST 1 / 2 columns, target row, TOTAL (needs do_no)',
   lab_results: 'Every lab result vs target for one order as a long list (needs do_no)',
   order_cost: 'Cost tab of one order: expected vs actual RM cost per batch + total (needs do_no)',
   loss_orders: 'Loss-making orders',
@@ -414,32 +417,103 @@ function batchesSheet(o) {
   }
 }
 
-/** Lab tab: tests × batches with "your target" and matched count. */
-function labSheet(o) {
-  const summary = summarizeLab(o.batches).filter((p) => p.tested > 0)
+const dmyx = (v, sep = '-') => {
+  if (!v) return ''
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return String(v)
+  return [String(d.getDate()).padStart(2, '0'), String(d.getMonth() + 1).padStart(2, '0'), d.getFullYear()].join(sep)
+}
+
+/** Plant "PRODUCTION SHEET" (PDF): compositions side by side, then one row per production group. */
+function productionSheet(o) {
+  const groups = o.groups || []
+  const comps = o.compositions
+  const title = `${o.party ? `${o.party.toUpperCase()}-` : ''}${String(o.product).toUpperCase()}-ORDER QTY-${r1(o.orderQty)} PRODUCTION SHEET`
+  const rows = [[]]
+  // composition block
+  // one composition per production group (as on the plant sheet); approved composition noted below
+  rows.push(groups.map((g) => sc(g.label.toUpperCase(), 'std')))
+  const depth = Math.max(1, ...groups.map((g) => g.composition.length))
+  for (let i = 0; i < depth; i++) rows.push(groups.map((g) => (g.composition[i] ? `${g.composition[i].name}: ${g.composition[i].pct}%` : '')))
+  if (comps.length) rows.push([sc(`Approved composition (reference for remarks): ${comps.map((c) => c.no).join(', ')}`, 'note')])
+  rows.push([])
+  rows.push(['S.N.', 'Date of Production', 'Job Card No.', 'Product', 'Quantity', 'Production', 'Remarks'].map((h) => sc(h, 'std')))
+  for (const g of groups) {
+    const date = g.dateFrom === g.dateTo ? dmyx(g.dateFrom) : `${dmyx(g.dateFrom)} TO ${dmyx(g.dateTo, '.')}`
+    const remarks = [...g.remarksActual, ...g.remarksAuto]
+    const n = Math.max(g.entered.length, remarks.length, 2)
+    for (let i = 0; i < n; i++)
+      rows.push([
+        i === 0 ? g.sn : i === 1 ? g.label : '',
+        i === 0 ? date : '',
+        i === 0 ? g.jobCards.join(' / ') : i === 1 ? `TOTAL QTY- ${r1(g.qty)}` : '',
+        i === 0 ? o.product : '',
+        i === 0 ? sc(r1(g.qty), 'bold') : '',
+        g.entered[i] ? `${g.entered[i].name}: ${g.entered[i].qty}` : '',
+        remarks[i] ? (i < g.remarksActual.length ? remarks[i] : sc(remarks[i], 'note')) : '',
+      ])
+    rows.push([])
+  }
+  rows.push(['', '', '', sc('TOTAL QTY', 'bold'), sc(`${r1(o.producedQty)} MT`, 'bold')])
+  rows.push([], [sc('Production = mix as entered for the group’s largest batch (kg / bags as typed). Grey remarks are generated in English vs the composition; others are as typed.', 'note')])
+  return { name: 'Production sheet', columns: [title, '', '', '', '', '', ''], rows }
+}
+
+const LAB_REPORT_COLS = [
+  ['Status', (r) => String(r.Status2 ?? '').toUpperCase()],
+  ['Date Of Test', (r) => dmyx(r.DateOfTest1, '/')],
+  ['WC %', 'wc'],
+  ['Initial Setting Time', 'ist'],
+  ['Flow Of Material', 'flow'],
+  ['Final Setting Time', 'fst'],
+  ['Sieve Analysis', (r) => String(r.SieveAnalysis ?? '').toUpperCase()],
+  ['Status', (r) => String(r.Status3 ?? '').toUpperCase()],
+  ['Date Of Test', (r) => dmyx(r.DateOfTest2, '/')],
+  ['BD At 110C', 'bd110'],
+  ['CCS At 110C', 'ccs110'],
+  ['BD At 1100C', 'bd1100'],
+  ['CCS At 1100C', 'ccs1100'],
+  ['PLC At 1100', 'plc'],
+]
+
+/** Plant "PRODUCTION & LAB REPORT SHEET" (PDF): one row per batch, grouped, LAB TEST 1 / 2, target row, TOTAL. */
+function labReportSheet(o) {
   const latest = o.compositions[o.compositions.length - 1]
   const items = o.batches.find((b) => b.standard?.id === latest?.id)?.labCheck.items || o.batches[0]?.labCheck.items || []
-  const target = (key) => items.find((i) => i.key === key)?.targetText || 'not set'
-  const off = (it) => {
-    if (!it.diff) return ''
-    const v = Math.abs(it.diff)
-    return ` (${it.diff > 0 ? '↑' : '↓'} ${v < 1 ? r2(v) : r1(v)}${it.unit === 'min' ? ' min' : ''} ${it.diff > 0 ? 'high' : 'low'})`
-  }
-  const rows = summary.map((p) => [
-    sc(p.label, 'bold'),
-    sc(target(p.key), 'std'),
-    p.judged ? sc(`${p.ok}/${p.judged}`, p.ok === p.judged ? 'ok' : p.ok / p.judged >= 0.5 ? 'minor' : 'major') : '—',
-    ...o.batches.map((b) => {
-      const it = b.labCheck.items.find((i) => i.key === p.key)
-      const raw = it?.actualText !== null && it?.actualText !== undefined ? String(it.actualText).trim() : ''
-      if (!raw) return null
-      if (it.status === 'ok') return sc(`${raw} ✓`, 'ok')
-      if (it.status === 'minor' || it.status === 'major') return sc(raw + off(it), it.status)
-      return it.status === 'notarget' ? `${raw} (no target)` : raw
-    }),
-  ])
-  rows.push([], [sc(`Your target = “Expected …” values entered while creating composition ${latest?.no || ''}. ✓ = matched; ↓/↑ = how far outside the target.`, 'note')])
-  return { name: 'Lab', columns: ['Test', `Your target (${latest?.no || '—'})`, 'Matched', ...o.batches.map((b) => `B${b.seq} ${b.jobCard}`)], rows, freezeCols: 3 }
+  const target = (key) => items.find((i) => i.key === key)?.targetText || ''
+  const title = `${o.party ? `${o.party.toUpperCase()}-` : ''}${String(o.product).toUpperCase()}-ORDER QTY-${r1(o.orderQty)} PRODUCTION & LAB REPORT SHEET`
+  const rows = [
+    ['', '', '', '', sc('LAB TEST 1', 'std'), '', '', '', '', '', '', sc('LAB TEST 2', 'std')],
+    // header colours as on the plant sheet: base = light green, Status = orange, Lab Test 1 = green, Lab Test 2 = yellow
+    [...['S.N.', 'Date of Production', 'Job Card No.', 'Qty'].map((h) => sc(h, 'hdBase')), ...LAB_REPORT_COLS.map(([h], i) => sc(h, h === 'Status' ? 'hdStatus' : i < 7 ? 'hdLt1' : 'hdLt2'))],
+    [sc(`Target ${latest ? `(${latest.no})` : ''}`, 'note'), '', '', '', ...LAB_REPORT_COLS.map(([, k]) => (typeof k === 'string' ? sc(target(k) || '—', 'note') : ''))],
+  ]
+  let sn = 0
+  const groups = o.groups?.length ? o.groups : [{ batches: o.batches }]
+  groups.forEach((g, gi) => {
+    if (gi > 0) rows.push([])
+    for (const b of g.batches) {
+      sn += 1
+      rows.push([
+        sn,
+        dmyx(b.date),
+        b.jobCard,
+        b.fgQty,
+        ...LAB_REPORT_COLS.map(([, k]) => {
+          if (typeof k === 'function') return k(b.raw)
+          const it = b.labCheck.items.find((i) => i.key === k)
+          const raw = it?.actualText !== null && it?.actualText !== undefined ? String(it.actualText).trim().toUpperCase() : ''
+          if (!raw) return ''
+          const n = Number(raw)
+          const v = raw !== '' && Number.isFinite(n) ? n : raw
+          return it.status === 'minor' || it.status === 'major' ? sc(v, it.status) : v
+        }),
+      ])
+    }
+  })
+  rows.push(['', '', sc('TOTAL', 'bold'), sc(r1(o.producedQty), 'bold')])
+  rows.push([], [sc('Yellow / red = outside the target entered while creating the composition.', 'note')])
+  return { name: 'Lab report', columns: [title, ...Array(17).fill('')], rows }
 }
 
 /** Cost tab: per batch expected vs actual RM cost, ₹/MT, final costing, total row. */
@@ -490,24 +564,26 @@ export function buildExport(args, { model, settings, todayMs }) {
       let list = model.orders.filter((o) => o.batches.length || o.compositions.length)
       if (firm) list = list.filter((o) => firmLabel(o.firm).toLowerCase().includes(firm))
       if (args.severity) list = list.filter((o) => o.severity === args.severity)
-      if (q) list = list.filter((o) => [o.doNo, o.product, o.party, ...o.batches.map((b) => b.jobCard)].join(' ').toLowerCase().includes(q))
-      return out('Orders', ['DO', 'Product', 'Party', 'Firm', 'Ordered MT', 'Produced MT', 'Batches', 'OK', 'Minor', 'Major', 'Avg mix shift %', 'Compositions', 'Overall', 'Expected delivery'],
-        list.map((o) => [o.doNo, o.product, o.party, firmLabel(o.firm), r1(o.orderQty), r1(o.producedQty), o.batches.length, o.batchCounts.ok, o.batchCounts.minor, o.batchCounts.major, r1(o.avgShift), o.compositions.map((c) => c.no).join(' → '), statusCell(o.severity === 'none' ? 'ok' : o.severity), day(o.expectedDelivery)]))
+      if (q) list = list.filter((o) => [o.doNo, o.poNo, o.product, o.party, ...o.batches.map((b) => b.jobCard)].join(' ').toLowerCase().includes(q))
+      return out('Orders', ['DO', 'PO No.', 'PO Date', 'Product', 'Party', 'Firm', 'Ordered MT', 'Produced MT', 'Batches', 'OK', 'Minor', 'Major', 'Avg mix shift %', 'Compositions', 'Overall', 'Expected delivery'],
+        list.map((o) => [o.doNo, o.poNo || '', day(o.poDate), o.product, o.party, firmLabel(o.firm), r1(o.orderQty), r1(o.producedQty), o.batches.length, o.batchCounts.ok, o.batchCounts.minor, o.batchCounts.major, r1(o.avgShift), o.compositions.map((c) => c.no).join(' → '), statusCell(o.severity === 'none' ? 'ok' : o.severity), day(o.expectedDelivery)]))
     }
     case 'order_report':
     case 'order_matrix':
     case 'order_batches':
     case 'order_lab':
-    case 'order_cost': {
+    case 'order_cost':
+    case 'production_sheet': {
       const { order: o, error } = needOrder()
       if (!o) return { error }
       if (!o.batches.length) return { error: `${o.doNo} has no batches yet.` }
       const base = `${o.doNo} ${o.product}`
       if (ds === 'order_batches') return book(`${base} batches`, [batchesSheet(o)])
-      if (ds === 'order_lab') return book(`${base} lab`, [labSheet(o)])
+      if (ds === 'order_lab') return book(`${base} lab report`, [labReportSheet(o)])
+      if (ds === 'production_sheet') return book(`${base} production sheet`, [productionSheet(o)])
       if (ds === 'order_cost') return book(`${base} cost`, [costSheet(o)])
       if (ds === 'order_matrix') return book(`${base} batch matrix`, [matrixSheet(o, 'actual'), matrixSheet(o, 'dev'), batchesSheet(o)])
-      return book(`${base} report`, [matrixSheet(o, 'actual'), matrixSheet(o, 'dev'), batchesSheet(o), labSheet(o), costSheet(o)])
+      return book(`${base} report`, [productionSheet(o), matrixSheet(o, 'actual'), matrixSheet(o, 'dev'), batchesSheet(o), labReportSheet(o), costSheet(o)])
     }
     case 'batch_lines':
     case 'batch_compare': {

@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom'
 import { fmtDate, fmtInr, fmtNum } from '../lib/format.js'
 import { firmLabel } from '../lib/normalize.js'
 import { Badge, Empty, Kpi, Notice } from './ui.jsx'
+import Pagination from './Pagination.jsx'
+import { usePagination } from '../lib/pagination.js'
 
 /** ₹ in lakh / crore for headline numbers: ₹9.89 Cr, ₹57.0 L */
 const fmtMoney = (v) => {
@@ -412,6 +414,9 @@ export function OpsSection({ biz }) {
   const d = biz.delivery
   const q = biz.dataQuality
   const [showErrors, setShowErrors] = useState(false)
+  // two independent tables on the Dashboard → own URL keys (?dpage / ?epage)
+  const dpg = usePagination(d.overdueList.length, 'd')
+  const epg = usePagination(q.costErrors.length, 'e')
   return (
     <>
       <SectionTitle sub="Orders still to be produced, and data problems that make the numbers above less reliable.">Delivery & data quality</SectionTitle>
@@ -443,7 +448,7 @@ export function OpsSection({ biz }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {d.overdueList.slice(0, 25).map((x) => (
+                  {dpg.slice(d.overdueList).map((x) => (
                     <tr key={x.order.key}>
                       <td className="nowrap">
                         <Link to={orderLink(x.order)} style={{ color: 'var(--brand)', fontWeight: 600 }}>
@@ -467,11 +472,7 @@ export function OpsSection({ biz }) {
               </table>
             </div>
           )}
-          {d.overdueList.length > 25 && (
-            <div className="faint" style={{ padding: '8px 16px', fontSize: 12, borderTop: '1px solid var(--border)' }}>
-              Showing 25 most overdue of {d.overdueList.length}
-            </div>
-          )}
+          <Pagination pg={dpg} label="overdue orders" />
         </section>
 
         <section className="card">
@@ -510,6 +511,7 @@ export function OpsSection({ biz }) {
             </div>
           )}
           {showErrors && (
+            <>
             <div className="table-wrap" style={{ maxHeight: 360 }}>
               <table className="tbl">
                 <thead>
@@ -521,7 +523,7 @@ export function OpsSection({ biz }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {q.costErrors.map(({ b, o, expected, actual }) => (
+                  {epg.slice(q.costErrors).map(({ b, o, expected, actual }) => (
                     <tr key={b.id}>
                       <td className="nowrap">
                         <Link to={`${orderLink(o)}?tab=cost`} style={{ color: 'var(--brand)', fontWeight: 600 }}>
@@ -539,6 +541,8 @@ export function OpsSection({ biz }) {
                 </tbody>
               </table>
             </div>
+            <Pagination pg={epg} label="batches" />
+            </>
           )}
         </section>
       </div>

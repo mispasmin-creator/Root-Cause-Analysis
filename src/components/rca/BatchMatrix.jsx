@@ -9,12 +9,33 @@ import { Segmented } from '../ui.jsx'
  */
 export default function BatchMatrix({ order, onSelectBatch, selectedId }) {
   const [mode, setMode] = useState('actual')
+  // grouped view first, like the plant sheet; "By batch" still available
+  const [view, setView] = useState(order.groups?.length ? 'group' : 'batch')
+  // "By group": one column per production group (batches with the same mix), as on the production sheet
+  const groupCols = (order.groups || []).map((g) => ({
+    ...g.batches[0],
+    id: g.id,
+    label: g.label,
+    sub: `${g.batches.length} JC · ${g.qty} MT`,
+    title: `${g.jobCards.join(' / ')} — ${g.qty} MT`,
+    fgQty: g.qty,
+    open: g.batches[0],
+  }))
+  const cols = view === 'group' ? groupCols : order.batches
   const latest = order.compositions[order.compositions.length - 1]
   const lineFor = (b, k) => b.vsStandard?.lines.find((l) => l.key === k)
 
   return (
     <div>
       <div className="row" style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
+        <Segmented
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'group', label: 'By composition' },
+            { value: 'batch', label: 'By batch' },
+          ]}
+        />
         <Segmented
           value={mode}
           onChange={setMode}
@@ -53,16 +74,16 @@ export default function BatchMatrix({ order, onSelectBatch, selectedId }) {
                   Std {latest.no}
                 </th>
               )}
-              {order.batches.map((b) => (
+              {cols.map((b) => (
                 <th
                   key={b.id}
                   className={`batch-col ${selectedId === b.id ? 'sel' : ''}`}
-                  onClick={() => onSelectBatch(b)}
-                  title={`${b.jobCard} · ${fmtDate(b.date)} · ${b.fgQty} MT — click for details`}
+                  onClick={() => onSelectBatch(b.open || b)}
+                  title={b.title || `${b.jobCard} · ${fmtDate(b.date)} · ${b.fgQty} MT — click for details`}
                 >
-                  B{b.seq}
+                  {b.label || `B${b.seq}`}
                   <div className="faint" style={{ fontWeight: 500, fontSize: 10.5 }}>
-                    {b.jobCard}
+                    {b.sub || b.jobCard}
                   </div>
                 </th>
               ))}
@@ -77,7 +98,7 @@ export default function BatchMatrix({ order, onSelectBatch, selectedId }) {
                 {latest && (
                   <td className="std-col">{latest.percents[k] > 0 ? latest.percents[k].toFixed(latest.percents[k] < 1 ? 2 : 1) : <span className="faint">—</span>}</td>
                 )}
-                {order.batches.map((b) => {
+                {cols.map((b) => {
                   const l = lineFor(b, k)
                   const actual = b.percents[k] || 0
                   // no comparison line and not used → material belongs to another batch/revision
@@ -115,14 +136,14 @@ export default function BatchMatrix({ order, onSelectBatch, selectedId }) {
             <tr>
               <td>FG produced (MT)</td>
               {latest && <td className="std-col" />}
-              {order.batches.map((b) => (
+              {cols.map((b) => (
                 <td key={b.id}>{b.fgQty}</td>
               ))}
             </tr>
             <tr>
               <td title="Σ|Δ| ÷ 2 — share of the mix that differs from the standard">Mix shift %</td>
               {latest && <td className="std-col" />}
-              {order.batches.map((b) => (
+              {cols.map((b) => (
                 <td key={b.id} style={{ color: `var(--${b.severity})` }}>
                   {b.vsStandard ? b.vsStandard.shift.toFixed(1) : '—'}
                 </td>
@@ -131,7 +152,7 @@ export default function BatchMatrix({ order, onSelectBatch, selectedId }) {
             <tr>
               <td title="RM entered ÷ FG produced">RM ÷ FG %</td>
               {latest && <td className="std-col" />}
-              {order.batches.map((b) => (
+              {cols.map((b) => (
                 <td key={b.id}>{b.coverage !== null ? b.coverage.toFixed(0) : '—'}</td>
               ))}
             </tr>

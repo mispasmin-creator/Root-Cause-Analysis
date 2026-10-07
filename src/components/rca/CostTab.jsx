@@ -2,6 +2,8 @@ import { useMemo } from 'react'
 import { summarizeCost } from '../../lib/rca.js'
 import { fmtDate, fmtInr, fmtNum } from '../../lib/format.js'
 import { Empty, Kpi, Notice } from '../ui.jsx'
+import Pagination from '../Pagination.jsx'
+import { usePagination } from '../../lib/pagination.js'
 
 const diffColor = (d) => (d > 0 ? 'var(--major)' : d < 0 ? 'var(--ok)' : undefined)
 const signedInr = (d) => (d === null || !Number.isFinite(d) ? '—' : `${d > 0 ? '+' : d < 0 ? '−' : ''}${fmtInr(Math.abs(d))}`)
@@ -14,6 +16,7 @@ const signedPct = (d) => (d === null || !Number.isFinite(d) ? '—' : `${d > 0 ?
  */
 export default function CostTab({ order, onSelectBatch }) {
   const s = useMemo(() => summarizeCost(order.batches), [order])
+  const pg = usePagination(order.batches.length, 'c') // totals below still cover all batches
 
   if (!s.batches)
     return (
@@ -64,7 +67,7 @@ export default function CostTab({ order, onSelectBatch }) {
               </tr>
             </thead>
             <tbody>
-              {order.batches.map((b) => {
+              {pg.slice(order.batches).map((b) => {
                 const { expected, costingPerMt, kgExcess } = b.cost
                 const actual = b.cost.actualCorrected ?? b.cost.actual
                 const d = expected !== null && actual !== null ? actual - expected : null
@@ -130,6 +133,7 @@ export default function CostTab({ order, onSelectBatch }) {
             </tfoot>
           </table>
         </div>
+        <Pagination pg={pg} label="batches" />
       </section>
 
       {s.kgFixedBatches > 0 && (

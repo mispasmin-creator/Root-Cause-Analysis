@@ -746,55 +746,6 @@ table.tbl {
   vertical-align: super;
 }
 
-/* ---------- findings ---------- */
-.finding {
-  display: flex;
-  gap: 12px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-}
-.finding:last-child {
-  border-bottom: 0;
-}
-.finding-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-}
-.finding-icon svg {
-  width: 16px;
-  height: 16px;
-}
-.finding-title {
-  font-weight: 600;
-}
-.finding-detail {
-  color: var(--text-2);
-  font-size: 13px;
-  margin-top: 2px;
-}
-.chips {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  margin-top: 6px;
-}
-.chip {
-  font-size: 11px;
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  padding: 0 6px;
-  cursor: pointer;
-  background: var(--surface);
-}
-.chip:hover {
-  border-color: var(--brand);
-  color: var(--brand);
-}
-
 /* ---------- progress / bars ---------- */
 .progress {
   height: 6px;
@@ -1398,3 +1349,111 @@ a.list-item:hover {
   background: var(--surface-2);
 }
 
+
+/* ---------- pagination (components/Pagination.jsx) ---------- */
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+}
+.pager-pages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.pager-pages .btn {
+  min-width: 32px;
+  justify-content: center;
+}
+.select-sm {
+  padding: 3px 6px;
+  font-size: 12.5px;
+}
+
+/* ---------- production sheet + lab report sheet (plant PDF layouts) ---------- */
+.psheet td,
+.psheet-comp td {
+  vertical-align: top;
+  font-size: 12.5px;
+}
+.psheet-comp th {
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+}
+.psheet-jcs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  max-width: 260px;
+}
+.psheet-auto {
+  font-style: italic;
+  color: var(--text-2);
+}
+.psheet-auto::before {
+  content: '• ';
+}
+.lab-sheet th,
+.lab-sheet td {
+  white-space: nowrap;
+  font-size: 12.5px;
+  text-align: center;
+}
+.lab-sheet .lab-sheet-group {
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  letter-spacing: 0.04em;
+}
+/* the whole header (LAB TEST 1/2 · column names · Target) sticks as one block while the table scrolls;
+   per-cell sticky made the rows overlap */
+.lab-sheet thead {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  box-shadow: 0 1px 0 var(--border-strong);
+}
+.lab-sheet thead th,
+.lab-sheet thead td {
+  position: static;
+}
+.lab-sheet-target td {
+  background: var(--brand-soft);
+  font-weight: 600;
+  font-size: 11.5px;
+  color: var(--brand-strong);
+}
+.lab-sheet-sep td {
+  height: 18px;
+  background: var(--surface-2);
+  padding: 0;
+}
+
+/* lab report header colours — copied from the plant PDF (same in light + dark so it reads like the sheet) */
+:root {
+  --lab-hd-base: #d9ead3;
+  --lab-hd-status: #ffc000;
+  --lab-hd-lt1: #a9d08e;
+  --lab-hd-lt2: #ffe45c;
+  --lab-hd-text: #1f2a10;
+}
+.lab-sheet thead th.hd-base {
+  background: var(--lab-hd-base);
+  color: var(--lab-hd-text);
+}
+.lab-sheet thead th.hd-status {
+  background: var(--lab-hd-status);
+  color: var(--lab-hd-text);
+}
+.lab-sheet thead th.hd-lt1 {
+  background: var(--lab-hd-lt1);
+  color: var(--lab-hd-text);
+}
+.lab-sheet thead th.hd-lt2 {
+  background: var(--lab-hd-lt2);
+  color: var(--lab-hd-text);
+}

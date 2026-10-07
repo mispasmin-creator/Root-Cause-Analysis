@@ -8,10 +8,10 @@ import { exportCsv } from '../lib/exportCsv.js'
 import { Badge, Empty, Kpi, Notice, SevBar, SeverityBadge } from '../components/ui.jsx'
 import { IconDownload } from '../components/Icons.jsx'
 import BatchMatrix from '../components/rca/BatchMatrix.jsx'
-import FindingsList from '../components/rca/FindingsList.jsx'
 import CompareTable from '../components/rca/CompareTable.jsx'
 import BatchDrawer from '../components/rca/BatchDrawer.jsx'
 import LabTab from '../components/rca/LabTab.jsx'
+import ProductionSheet from '../components/rca/ProductionSheet.jsx'
 import CostTab from '../components/rca/CostTab.jsx'
 
 export default function OrderDetail() {
@@ -20,8 +20,9 @@ export default function OrderDetail() {
   const [params, setParams] = useSearchParams()
   const order = model.orders.find((o) => o.key === decodeURIComponent(key))
   // unknown / removed tabs (old links to ?tab=mix or ?tab=trend) fall back to the matrix
-  const TAB_IDS = ['matrix', 'compare', 'compositions', 'lab', 'cost']
-  const tab = TAB_IDS.includes(params.get('tab')) ? params.get('tab') : 'matrix'
+  // Production sheet (plant PDF layout) is the default view
+  const TAB_IDS = ['sheet', 'matrix', 'compare', 'compositions', 'lab', 'cost']
+  const tab = TAB_IDS.includes(params.get('tab')) ? params.get('tab') : 'sheet'
   const batchId = Number(params.get('batch')) || null
 
   const setParam = (k, v) => {
@@ -58,10 +59,12 @@ export default function OrderDetail() {
     )
 
   const tabs = [
+    // order (user request): Production sheet → Lab → the rest
+    { id: 'sheet', label: 'Production sheet' },
+    { id: 'lab', label: 'Lab' },
     { id: 'matrix', label: 'Batch matrix' },
     { id: 'compare', label: 'Batch vs batch' },
-    { id: 'compositions', label: 'Composition history', count: order.compositions.length },
-    { id: 'lab', label: 'Lab' },
+    { id: 'compositions', label: 'Composition history', count: order.groups?.length || order.compositions.length },
     { id: 'cost', label: 'Cost' },
   ]
 
@@ -80,6 +83,13 @@ export default function OrderDetail() {
           </div>
           <p style={{ marginTop: 4 }}>
             {order.party || 'Party not set'} · <Badge>{firmLabel(order.firm)}</Badge>
+            {order.poNo && (
+              <>
+                {' '}
+                · PO <b>{order.poNo}</b>
+                {order.poDate && <> ({fmtDate(order.poDate)})</>}
+              </>
+            )}
             {order.expectedDelivery && <> · Expected {fmtDate(order.expectedDelivery)}</>}
             {order.cancelled && (
               <>
@@ -103,8 +113,14 @@ export default function OrderDetail() {
         <Kpi label="Batches" value={order.batches.length} sub={<SevBar counts={order.batchCounts} />} />
         <Kpi
           label="Compositions"
-          value={order.compositions.length}
-          sub={order.compositions.length ? order.compositions.map((c) => c.no).join(' → ') : 'none linked'}
+          value={order.groups?.length || order.compositions.length}
+          sub={
+            order.groups?.length
+              ? `Composition 1${order.groups.length > 1 ? `–${order.groups.length}` : ''}${order.compositions.length ? ` · approved ${order.compositions.map((c) => c.no).join(', ')}` : ''}`
+              : order.compositions.length
+                ? order.compositions.map((c) => c.no).join(' → ')
+                : 'none linked'
+          }
         />
         <Kpi label="Avg mix shift" value={`${order.avgShift.toFixed(1)}%`} sub="vs standard, per batch" tone={order.severity === 'none' ? undefined : order.severity} />
         <Kpi label="Unreviewed major" value={order.unreviewedMajor} sub="batches needing a root cause" tone={order.unreviewedMajor ? 'minor' : 'ok'} />
@@ -119,34 +135,24 @@ export default function OrderDetail() {
           <div>
             <div className="tabs" role="tablist">
               {tabs.map((t) => (
-                <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => setParam('tab', t.id === 'matrix' ? '' : t.id)} role="tab">
+                <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => setParam('tab', t.id === 'sheet' ? '' : t.id)} role="tab">
                   {t.label}
                   {t.count > 0 && <span className="count">{t.count}</span>}
                 </button>
               ))}
             </div>
 
+            {tab === 'sheet' && <ProductionSheet order={order} onSelectBatch={openBatch} />}
             {tab === 'matrix' && (
               <section className="card">
                 <BatchMatrix order={order} onSelectBatch={openBatch} selectedId={batchId} />
               </section>
             )}
             {tab === 'compare' && <BatchVsBatch order={order} settings={settings} />}
-            {tab === 'compositions' && <CompositionHistory order={order} />}
+            {tab === 'compositions' && <CompositionHistory order={order} settings={settings} onSelectBatch={openBatch} />}
             {tab === 'lab' && <LabTab order={order} onSelectBatch={openBatch} />}
             {tab === 'cost' && <CostTab order={order} onSelectBatch={openBatch} />}
           </div>
-
-          {/* findings sit below the analysis tabs (user preference) */}
-          <section className="card">
-            <div className="card-head">
-              <h2>Root-cause findings</h2>
-              <span className="faint" style={{ fontSize: 12 }}>
-                auto-detected · click a batch chip to inspect
-              </span>
-            </div>
-            <FindingsList findings={order.findings} batches={order.batches} onSelectBatch={openBatch} />
-          </section>
         </>
       )}
 
@@ -217,17 +223,74 @@ function BatchVsBatch({ order, settings }) {
   )
 }
 
-function CompositionHistory({ order }) {
+function CompositionHistory({ order, settings, onSelectBatch }) {
+  // production compositions (one per production group, same as the Production sheet), then the approved ones
+  const groups = order.groups || []
+  const production = groups.length ? (
+    <>
+      {groups.map((g, i) => {
+        const prev = groups[i - 1]
+        const vsPrev = prev ? comparePercents(prev.percents, g.percents, settings, order.names) : null
+        return (
+          <section className="card" key={g.id}>
+            <div className="card-head">
+              <div className="row">
+                <h3>{g.label}</h3>
+                <Badge tone={g.severity}>{g.severity === 'ok' ? 'As per approved' : 'Changed vs approved'}</Badge>
+              </div>
+              <span className="faint" style={{ fontSize: 12 }}>
+                {fmtNum(g.qty)} MT · {g.batches.length} batch{g.batches.length === 1 ? '' : 'es'} ·{' '}
+                {g.batches.map((b, bi) => (
+                  <button key={b.id} type="button" className="chat-link" onClick={() => onSelectBatch(b)}>
+                    {b.jobCard}
+                    {bi < g.batches.length - 1 ? ' /' : ''}
+                  </button>
+                ))}
+              </span>
+            </div>
+            <div className="card-body">
+              <div className="row" style={{ gap: 6 }}>
+                {g.composition.map((it) => (
+                  <Badge key={it.key}>
+                    {it.name} · {it.pct}%
+                  </Badge>
+                ))}
+              </div>
+              {g.remarksAuto.length > 0 && (
+                <div className="faint" style={{ fontSize: 12, marginTop: 8 }}>
+                  vs {g.standard?.no || 'approved'}: {g.remarksAuto.join('; ')}
+                </div>
+              )}
+            </div>
+            {vsPrev && vsPrev.lines.some((x) => x.status !== 'ok') && (
+              <>
+                <div className="card-head" style={{ borderTop: '1px solid var(--border)' }}>
+                  <h3 className="muted">Changes vs {prev.label}</h3>
+                </div>
+                <CompareTable result={vsPrev} baseLabel={prev.label} actualLabel={g.label} names={order.names} />
+              </>
+            )}
+          </section>
+        )
+      })}
+      {order.compositions.length > 0 && <h3 style={{ margin: '8px 0 -4px' }}>Approved composition (Production-FMS)</h3>}
+    </>
+  ) : null
+
   if (!order.compositions.length)
     return (
+      <div className="stack">
+        {production}
       <div className="card">
         <Notice kind="warn">
           No composition (costing_response) is linked to this order. Linking uses Order Receipt Id, then DO + product (+ party).
         </Notice>
       </div>
+      </div>
     )
   return (
     <div className="stack">
+      {production}
       {[...order.compositions].reverse().map((c) => {
         const used = order.batches.filter((b) => b.standard?.id === c.id)
         return (

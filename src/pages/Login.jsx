@@ -1,16 +1,20 @@
 import { useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { Notice } from '../components/ui.jsx'
 
 export default function Login() {
   const { user, login } = useAuth()
+  const location = useLocation()
+  // page the user originally asked for (set by RequireAuth); fall back to the dashboard
+  const from = location.state?.from
+  const target = from?.pathname && from.pathname !== '/login' ? `${from.pathname}${from.search || ''}` : '/'
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
 
-  if (user) return <Navigate to="/" replace />
+  if (user) return <Navigate to={target} replace />
 
   const submit = async (e) => {
     e.preventDefault()

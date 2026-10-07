@@ -88,7 +88,7 @@ const colName = (i) => {
 }
 
 // Cell styles — same meaning/colours as the app (DESIGN.md §3). A cell is either a plain value or { v, s: 'major' }.
-export const XLSX_STYLE = { header: 1, ok: 2, minor: 3, major: 4, added: 5, missing: 6, std: 7, bold: 8, note: 9, bad: 10, good: 11 }
+export const XLSX_STYLE = { header: 1, ok: 2, minor: 3, major: 4, added: 5, missing: 6, std: 7, bold: 8, note: 9, bad: 10, good: 11, hdBase: 12, hdStatus: 13, hdLt1: 14, hdLt2: 15 }
 const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
 <fonts count="7">
@@ -100,7 +100,7 @@ const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <font><sz val="11"/><color rgb="FF6B3FA0"/><name val="Calibri"/></font>
 <font><i/><sz val="10"/><color rgb="FF808080"/><name val="Calibri"/></font>
 </fonts>
-<fills count="8">
+<fills count="12">
 <fill><patternFill patternType="none"/></fill>
 <fill><patternFill patternType="gray125"/></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFE8EEDC"/></patternFill></fill>
@@ -109,10 +109,14 @@ const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <fill><patternFill patternType="solid"><fgColor rgb="FFEFE7FB"/></patternFill></fill>
 <fill><patternFill patternType="lightUp"><fgColor rgb="FFF4B6B0"/><bgColor rgb="FFFFFFFF"/></patternFill></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFEEF3E2"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFD9EAD3"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFFFC000"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFA9D08E"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFFFE45C"/></patternFill></fill>
 </fills>
 <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="12">
+<cellXfs count="16">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
 <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
@@ -125,6 +129,10 @@ const STYLES_XML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <xf numFmtId="0" fontId="6" fillId="0" borderId="0" xfId="0" applyFont="1"/>
 <xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>
 <xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>
+<xf numFmtId="0" fontId="1" fillId="8" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
+<xf numFmtId="0" fontId="1" fillId="9" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
+<xf numFmtId="0" fontId="1" fillId="10" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
+<xf numFmtId="0" fontId="1" fillId="11" borderId="0" xfId="0" applyFont="1" applyFill="1"/>
 </cellXfs>
 </styleSheet>`
 

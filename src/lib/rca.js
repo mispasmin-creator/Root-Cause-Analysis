@@ -301,6 +301,17 @@ export function buildModel(raw, settings) {
       jcFirm.get(`${jn}|${f}`)
     batch.jobCardRow = jc || null
     let p = jc?.['Production Id'] ? prodIdx.byId.get(jc['Production Id']) : null
+    // a job card's Production Id is sometimes wrong in Production-FMS (e.g. JC-644 of DO-501 points to DO-489):
+    // trust it only when that production row has the batch's own DO + product, else match by DO + product
+    if (
+      p &&
+      batch.orderNo &&
+      !(
+        (normalizeKey(p['Delivery Order No.']) === normalizeKey(batch.orderNo) || numericDo(p['Delivery Order No.']) === numericDo(batch.orderNo)) &&
+        normalizeKey(p['Product Name']) === normalizeKey(batch.product)
+      )
+    )
+      p = null
     if (!p) p = findProduction(prodIdx, batch.orderNo, batch.product, batch.firm)
     const order = p
       ? orders.get(`p${p.id}`)
@@ -324,6 +335,28 @@ export function buildModel(raw, settings) {
 
   // compositions → order (Order Receipt Id first, then DO + product (+ party))
   const ordersList = [...orders.values()]
+
+  // Customer PO (Order system ORDER RECEIPT): Order Receipt Id → DO + product → DO. Display-only; no other field uses it.
+  {
+    const PO = 'PARTY PO NO (As Per Po Exact)'
+    const rcById = new Map()
+    const rcByDoProd = new Map()
+    const rcByDo = new Map()
+    for (const r of raw.orderReceipts || []) {
+      if (!r[PO]) continue
+      rcById.set(r.id, r)
+      const d = normalizeKey(r['DO-Delivery Order No.'])
+      const k = `${d}|${normalizeKey(r['Product Name'])}`
+      if (!rcByDoProd.has(k)) rcByDoProd.set(k, r)
+      if (!rcByDo.has(d)) rcByDo.set(d, r)
+    }
+    for (const o of ordersList) {
+      const d = normalizeKey(o.doNo)
+      const r = (o.orderReceiptId && rcById.get(o.orderReceiptId)) || rcByDoProd.get(`${d}|${normalizeKey(o.product)}`) || rcByDo.get(d) || null
+      o.poNo = r ? String(r[PO]).trim() : ''
+      o.poDate = r?.['Party PO Date'] || null
+    }
+  }
   const byReceipt = new Map()
   const byDoProd = new Map()
   for (const o of ordersList) {
@@ -482,8 +515,112 @@ export function analyseOrder(order, settings, priceMap = {}) {
     unreviewedMajor: batches.filter((b) => b.severity === 'major' && !b.reviewed).length,
     lastBatchAt: batches.length ? batches[batches.length - 1].sortKey : 0,
   }
+  result.groups = buildGroups(result)
   result.findings = buildFindings(result, settings)
   return result
+}
+
+// ---------------------------------------------------------------------------------------------
+// Production groups — PDF "production sheet" view
+// ---------------------------------------------------------------------------------------------
+// Batches whose actual mix is the same (same materials, same share of the mix) form one group = one
+// "production composition", wherever they fall in date order (as on the plant's production sheet).
+// Each group carries: job cards, dates, total qty, the mix exactly as entered for its largest batch
+// (kg / bags as typed), the comparison with the approved composition, the remarks people actually typed
+// (verbatim) and auto remarks in English.
+
+const GROUP_ROUND = 1 // mix share rounded to 0.1 % when deciding "same mix"
+
+/** Mix exactly as entered on the production entry (packaging and kg values included, no conversion). */
+export function enteredMix(raw) {
+  const out = []
+  for (let i = 1; i <= MAX_RM; i++) {
+    const name = String(raw?.[`Raw Material Name ${i}`] ?? '').trim()
+    const qty = num(raw?.[`Quantity Of Raw Material ${i}`])
+    if (name && qty > 0) out.push({ name, qty })
+  }
+  return out
+}
+
+const sizeToken = (name) => String(name).match(/\(([^)]*)\)\s*$/)?.[1]?.replace(/\s+/g, '') || null
+
+/**
+ * English auto remarks from a comparison (base = composition, actual = group mix).
+ * Removed + added materials are paired as substitutions — same grain size first "(3-5)", then closest share.
+ */
+export function autoRemarks(cmp, names) {
+  if (!cmp) return []
+  const nm = (k) => names[k] || k
+  const removed = cmp.lines.filter((l) => l.status === 'missing')
+  const added = cmp.lines.filter((l) => l.status === 'added')
+  const out = []
+  const usedA = new Set()
+  for (const r of removed) {
+    const cands = added.filter((a) => !usedA.has(a.key))
+    if (!cands.length) {
+      out.push(`${nm(r.key)} not used (composition ${r.base.toFixed(1)}%)`)
+      continue
+    }
+    const sameSize = cands.filter((a) => sizeToken(nm(a.key)) && sizeToken(nm(a.key)) === sizeToken(nm(r.key)))
+    const pool = sameSize.length ? sameSize : cands
+    const best = pool.reduce((m, a) => (Math.abs(a.actual - r.base) < Math.abs(m.actual - r.base) ? a : m), pool[0])
+    usedA.add(best.key)
+    out.push(`${nm(r.key)} replaced by ${nm(best.key)}`)
+  }
+  for (const a of added) if (!usedA.has(a.key)) out.push(`${nm(a.key)} added (${a.actual.toFixed(1)}%, not in composition)`)
+  for (const l of cmp.lines.filter((x) => x.status === 'major' || x.status === 'minor'))
+    out.push(`${nm(l.key)} ${l.base.toFixed(1)}% → ${l.actual.toFixed(1)}%`)
+  return out
+}
+
+export function buildGroups(order) {
+  const sig = (b) =>
+    b.items
+      .map((it) => `${it.key}:${(b.percents[it.key] || 0).toFixed(GROUP_ROUND)}`)
+      .sort()
+      .join('|')
+  const map = new Map()
+  for (const b of order.batches) {
+    const s = sig(b)
+    if (!map.has(s)) map.set(s, [])
+    map.get(s).push(b)
+  }
+  let serial = 0
+  return [...map.values()].map((batches, gi) => {
+    const first = batches[0]
+    const rep = batches.reduce((m, b) => (b.fgQty > m.fgQty ? b : m), first) // largest batch = the row shown "as entered"
+    const sn = serial + 1
+    serial += batches.length
+    const times = batches.map((b) => b.sortKey).filter(Boolean)
+    const actual = [...new Set(batches.map((b) => String(b.remarks ?? '').trim()).filter((r) => r && !/^0+$/.test(r)))]
+    const notes = [...new Set(batches.map((b) => String(b.jobCardRow?.Notes ?? '').trim()).filter(Boolean))]
+    const reviews = batches.flatMap((b) => b.reviews || []).map((r) => [r.root_cause_category, r.root_cause_detail].filter(Boolean).join(': '))
+    // the group's own composition, as on the plant sheet: % of FG for its largest batch (kg entries already in MT,
+    // packaging excluded) — e.g. 2 MT in a 10 MT batch = 20 %, SHMP 30 kg = 0.3 %
+    const composition = rep.fgQty
+      ? rep.items.map((it) => ({ key: it.key, name: it.name, pct: Math.round((it.value / rep.fgQty) * 10000) / 100 }))
+      : []
+    return {
+      id: `G${gi + 1}`,
+      index: gi + 1,
+      label: `Composition ${gi + 1}`,
+      composition,
+      sn, // serial of its first row on the lab / production sheet
+      batches,
+      jobCards: batches.map((b) => b.jobCard),
+      qty: batches.reduce((s, b) => s + b.fgQty, 0),
+      dateFrom: times.length ? Math.min(...times) : null,
+      dateTo: times.length ? Math.max(...times) : null,
+      rep,
+      entered: enteredMix(rep.raw),
+      percents: first.percents,
+      standard: first.standard,
+      vsStandard: first.vsStandard,
+      severity: first.severity,
+      remarksActual: [...actual, ...notes, ...new Set(reviews)], // shown exactly as typed
+      remarksAuto: autoRemarks(first.vsStandard, order.names),
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { summarizeLab } from '../../lib/rca.js'
-import { fmtDate, fmtNum } from '../../lib/format.js'
+import { fmtNum } from '../../lib/format.js'
 import { Empty } from '../ui.jsx'
 import { IconBeaker } from '../Icons.jsx'
 
@@ -14,14 +14,39 @@ const offText = (it) => {
   return `${it.diff > 0 ? '↑' : '↓'} ${fmtNum(v, v < 1 ? 2 : 1)}${unit} ${it.diff > 0 ? 'high' : 'low'}`
 }
 
+const dmy = (v, sep = '-') => {
+  if (!v) return ''
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return String(v)
+  return [String(d.getDate()).padStart(2, '0'), String(d.getMonth() + 1).padStart(2, '0'), d.getFullYear()].join(sep)
+}
+const up = (v) => (v === null || v === undefined ? '' : String(v).trim().toUpperCase())
+
+// Column layout of the plant's "Production & Lab report sheet" (PDF). `key` = labCheck item → judged against target.
+const LAB_SHEET_COLS = [
+  { group: 1, label: 'Status', raw: (r) => up(r.Status2) },
+  { group: 1, label: 'Date Of Test', raw: (r) => dmy(r.DateOfTest1, '/') },
+  { group: 1, label: 'WC %', key: 'wc' },
+  { group: 1, label: 'Initial Setting Time', key: 'ist' },
+  { group: 1, label: 'Flow Of Material', key: 'flow' },
+  { group: 1, label: 'Final Setting Time', key: 'fst' },
+  { group: 1, label: 'Sieve Analysis', raw: (r) => up(r.SieveAnalysis) },
+  { group: 2, label: 'Status', raw: (r) => up(r.Status3) },
+  { group: 2, label: 'Date Of Test', raw: (r) => dmy(r.DateOfTest2, '/') },
+  { group: 2, label: 'BD At 110C', key: 'bd110' },
+  { group: 2, label: 'CCS At 110C', key: 'ccs110' },
+  { group: 2, label: 'BD At 1100C', key: 'bd1100' },
+  { group: 2, label: 'CCS At 1100C', key: 'ccs1100' },
+  { group: 2, label: 'PLC At 1100C', key: 'plc' },
+]
+
 /**
- * Lab tab — ONE table answering: "the values I set when creating the composition — did the lab test match them?"
- * Rows = tests, first column = your target, then how many batches matched, then every batch's result.
- * All judging comes from batch.labCheck (rca.js compareLab).
+ * Lab tab in the plant's report-sheet layout: one row per batch (grouped like the production sheet,
+ * blank row between groups), LAB TEST 1 / LAB TEST 2 columns, a Target row from the composition, TOTAL qty.
+ * Results outside the composition target are coloured (judging = batch.labCheck from rca.js).
  */
 export default function LabTab({ order, onSelectBatch }) {
   const summary = useMemo(() => summarizeLab(order.batches), [order])
-  const props = summary.filter((s) => s.tested > 0)
   const latest = order.compositions[order.compositions.length - 1]
   const latestItems = order.batches.find((b) => b.standard?.id === latest?.id)?.labCheck.items || order.batches[0]?.labCheck.items || []
   const targetOf = (key) => latestItems.find((i) => i.key === key)?.targetText || null
@@ -29,7 +54,7 @@ export default function LabTab({ order, onSelectBatch }) {
   const tested = order.batches.filter((b) => b.labCheck.tested)
   const judged = summary.reduce((s, p) => s + p.judged, 0)
   const matched = summary.reduce((s, p) => s + p.ok, 0)
-  const anyTarget = props.some((p) => targetOf(p.key))
+  const groups = order.groups?.length ? order.groups : [{ id: 'all', batches: order.batches }]
 
   if (!tested.length)
     return (
@@ -40,15 +65,45 @@ export default function LabTab({ order, onSelectBatch }) {
       </div>
     )
 
+  // serial numbers run across groups (S.N. column of the sheet), computed before render
+  const serialOf = new Map()
+  groups.flatMap((g) => g.batches).forEach((b, i) => serialOf.set(b, i + 1))
+  const cell = (b, c) => {
+    if (!c.key) {
+      const v = c.raw(b.raw)
+      return <td key={c.label + c.group}>{v || <span className="faint">·</span>}</td>
+    }
+    const it = b.labCheck.items.find((i) => i.key === c.key)
+    const raw = it?.actualText !== null && it?.actualText !== undefined ? String(it.actualText).trim() : ''
+    if (!raw)
+      return (
+        <td key={c.key}>
+          <span className="faint">·</span>
+        </td>
+      )
+    // no target to judge against → plain text (not greyed out)
+    const cls = it.status === 'ok' ? 'match' : JUDGED.includes(it.status) ? it.status : ''
+    return (
+      <td key={c.key}>
+        <span className={`cell ${cls}`} title={`${c.label}: ${raw}\nTarget (${b.standard?.no || '—'}): ${it.targetText || 'not set'}${offText(it) ? `\n${offText(it)} target` : it.status === 'ok' ? '\nMatched ✓' : ''}`}>
+          {up(raw)}
+          {offText(it) && <small>{offText(it)}</small>}
+        </span>
+      </td>
+    )
+  }
+
   return (
     <section className="card">
       <div className="card-head" style={{ alignItems: 'flex-start' }}>
         <div style={{ minWidth: 0 }}>
-          <h3>Lab result vs your target</h3>
+          <h3>
+            {order.party ? `${order.party} · ` : ''}
+            {order.product} · Order qty {fmtNum(order.orderQty, 0)} — Production &amp; lab report
+          </h3>
           <div className="muted" style={{ fontSize: 13, marginTop: 3 }}>
-            <b>Your target</b> = values entered while creating composition {latest ? <b>{latest.no}</b> : ''}. Each batch shows its lab
-            result: <span style={{ color: 'var(--ok)', fontWeight: 600 }}>✓ matched</span>, or how much it was{' '}
-            <span style={{ color: 'var(--major)', fontWeight: 600 }}>low ↓ / high ↑</span>.
+            <b>Target</b> row = values entered while creating composition {latest ? <b>{latest.no}</b> : ''}. Results outside the target are{' '}
+            <span style={{ color: 'var(--minor)', fontWeight: 600 }}>yellow</span> (slightly) or <span style={{ color: 'var(--major)', fontWeight: 600 }}>red</span>.
           </div>
         </div>
         <div className="row">
@@ -63,92 +118,71 @@ export default function LabTab({ order, onSelectBatch }) {
         </div>
       </div>
 
-      {!anyTarget && (
-        <div className="notice warn" style={{ margin: '12px 16px 0' }}>
-          No target values were entered for {latest ? latest.no : 'this composition'}, so results can’t be matched. Fill “Expected …” values
-          while creating the composition.
-        </div>
-      )}
-
       <div className="table-wrap" style={{ maxHeight: '72vh' }}>
-        <table className="tbl matrix lab-grid">
+        <table className="tbl lab-sheet">
           <thead>
             <tr>
-              <th>Test</th>
-              <th className="std-col" style={{ textAlign: 'left' }}>
-                Your target
+              <th colSpan={4} />
+              <th colSpan={7} className="c lab-sheet-group">
+                LAB TEST 1
               </th>
-              <th style={{ textAlign: 'left', minWidth: 120 }}>Matched</th>
-              {order.batches.map((b) => (
-                <th
-                  key={b.id}
-                  className="batch-col"
-                  onClick={() => onSelectBatch(b)}
-                  title={`${b.jobCard} · tested ${b.labCheck.tested ? fmtDate(b.raw.DateOfTest2 || b.raw.DateOfTest1 || b.date) : 'not yet'} — click for details`}
-                >
-                  B{b.seq}
-                  <div className="faint" style={{ fontWeight: 500, fontSize: 10.5 }}>
-                    {b.jobCard}
-                  </div>
+              <th colSpan={7} className="c lab-sheet-group">
+                LAB TEST 2
+              </th>
+            </tr>
+            <tr>
+              <th className="c hd-base">S.N.</th>
+              <th className="hd-base">Date of Production</th>
+              <th className="hd-base">Job Card No.</th>
+              <th className="r hd-base">Qty</th>
+              {LAB_SHEET_COLS.map((c) => (
+                // header colours as on the plant sheet: Status = orange, Lab Test 1 = green, Lab Test 2 = yellow
+                <th key={c.label + c.group} className={c.label === 'Status' ? 'hd-status' : c.group === 1 ? 'hd-lt1' : 'hd-lt2'}>
+                  {c.label}
                 </th>
+              ))}
+            </tr>
+            <tr className="lab-sheet-target">
+              <td colSpan={4}>Target {latest ? `(${latest.no})` : ''}</td>
+              {LAB_SHEET_COLS.map((c) => (
+                <td key={c.label + c.group}>{c.key ? targetOf(c.key) || '—' : ''}</td>
               ))}
             </tr>
           </thead>
           <tbody>
-            {props.map((p) => {
-              const target = targetOf(p.key)
-              const rate = p.judged ? (p.ok / p.judged) * 100 : null
-              return (
-                <tr key={p.key}>
-                  <td style={{ fontWeight: 600 }}>{p.label}</td>
-                  <td className="std-col nowrap" style={{ textAlign: 'left' }}>
-                    {target || <span className="faint" style={{ fontWeight: 400 }}>not set</span>}
-                  </td>
-                  <td style={{ textAlign: 'left' }}>
-                    {rate === null ? (
-                      <span className="faint">—</span>
-                    ) : (
-                      <div title={`${p.ok} of ${p.judged} tested batches matched the target`}>
-                        <div className="num" style={{ fontSize: 12, fontWeight: 600, color: rate === 100 ? 'var(--ok)' : rate >= 50 ? 'var(--minor)' : 'var(--major)' }}>
-                          {p.ok}/{p.judged}
-                        </div>
-                        <div className="progress" style={{ marginTop: 3 }}>
-                          <span style={{ width: `${rate}%`, background: rate === 100 ? 'var(--ok)' : rate >= 50 ? 'var(--minor)' : 'var(--major)' }} />
-                        </div>
-                      </div>
-                    )}
-                  </td>
-                  {order.batches.map((b) => {
-                    const it = b.labCheck.items.find((i) => i.key === p.key)
-                    const raw = it?.actualText !== null && it?.actualText !== undefined ? String(it.actualText).trim() : ''
-                    if (!raw)
-                      return (
-                        <td key={b.id} style={{ textAlign: 'center' }}>
-                          <span className="cell blank" title="Not tested">
-                            ·
-                          </span>
-                        </td>
-                      )
-                    const judgedCell = JUDGED.includes(it.status)
-                    const cls = it.status === 'ok' ? 'match' : judgedCell ? it.status : 'blank'
-                    return (
-                      <td key={b.id} style={{ textAlign: 'center' }}>
-                        <span
-                          className={`cell ${cls}`}
-                          title={`${p.label} · B${b.seq} (${b.jobCard})\nLab result: ${raw}\nYour target (${b.standard?.no || '—'}): ${it.targetText || 'not set'}\n${
-                            it.status === 'ok' ? 'Matched ✓' : offText(it) || (judgedCell ? '' : 'Not compared')
-                          }`}
-                        >
-                          {raw}
-                          <small>{it.status === 'ok' ? '✓' : offText(it) || (it.status === 'notarget' ? 'no target' : it.status === 'major' && p.kind === 'text' ? '✗ not ok' : '')}</small>
-                        </span>
-                      </td>
-                    )
-                  })}
+            {groups.map((g, gi) => [
+              gi > 0 && (
+                <tr key={`sep-${g.id}`} className="lab-sheet-sep">
+                  <td colSpan={4 + LAB_SHEET_COLS.length} />
                 </tr>
-              )
-            })}
+              ),
+              ...g.batches.map((b) => {
+                const sn = serialOf.get(b)
+                return (
+                  <tr key={b.id} className="clickable" onClick={() => onSelectBatch(b)}>
+                    <td className="c">{sn}</td>
+                    <td className="nowrap">{dmy(b.date)}</td>
+                    <td className="nowrap" style={{ fontWeight: 600 }}>
+                      {b.jobCard}
+                    </td>
+                    <td className="r num">{fmtNum(b.fgQty)}</td>
+                    {LAB_SHEET_COLS.map((c) => cell(b, c))}
+                  </tr>
+                )
+              }),
+            ])}
           </tbody>
+          <tfoot>
+            <tr>
+              <td />
+              <td />
+              <td style={{ fontWeight: 700 }}>TOTAL</td>
+              <td className="r num" style={{ fontWeight: 700 }}>
+                {fmtNum(order.producedQty)}
+              </td>
+              <td colSpan={LAB_SHEET_COLS.length} />
+            </tr>
+          </tfoot>
         </table>
       </div>
     </section>

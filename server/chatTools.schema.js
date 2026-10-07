@@ -14,8 +14,8 @@ const fn = (name, description, properties) => ({
 })
 
 export const TOOL_DEFS = [
-  fn('search_orders', 'Find production orders by DO number, product, party or job card. Returns a short list with links.', {
-    query: str('Text to search: DO number (DO-539), product (ZIRCAST 85), party name, JC number. null = all.'),
+  fn('search_orders', 'Find production orders by DO number, customer PO number, product, party (customer) or job card. Returns a short list with links.', {
+    query: str('Text to search: DO number (DO-539), PO number, product (ZIRCAST 85), party name, JC number. null = all.'),
     firm: str('PMMPL, RKL or PURAB. null = all firms.'),
     severity: { type: ['string', 'null'], enum: ['major', 'minor', 'ok', 'none', null], description: 'Filter by overall batch status. null = any.' },
     sort: { type: ['string', 'null'], enum: ['recent', 'shift', 'batches', 'unreviewed', null], description: 'recent (default), highest mix shift, most batches, most unreviewed major.' },
@@ -61,17 +61,18 @@ export const TOOL_DEFS = [
     'export_data',
     `Create a downloadable Excel (default) or CSV file when the user asks to export / download / "excel" / "csv" / "sheet".
 The file appears as a download button in the chat. Pick the dataset that matches the app view the user means:
-- order_report: everything for one order (Batch matrix, Deviation, Batches, Lab, Cost sheets) — "full / complete / summary of all batches"
+- order_report: everything for one order (Production sheet, Batch matrix, Deviation, Batches, Lab report, Cost) — "full / complete / summary of all batches"
+- production_sheet: the plant production sheet (compositions + production groups with remarks) — "production sheet", "groups"
 - order_matrix: "all batches" / "batch data" / "batch matrix" of one order — materials × batches like the app, coloured by status
 - batch_compare: two batches compared (do_no+batch vs b_do_no+b_batch) — Raw material | Base | Compare | Δ | Deviation | Status
 - batch_lines: one batch vs its composition (same columns as batch_compare)
-- order_lab: lab results vs target like the Lab tab; order_cost: cost per batch like the Cost tab
+- order_lab: production & lab report sheet (row per batch, LAB TEST 1 / 2, target row, total); order_cost: cost per batch like the Cost tab
 - order_batches: simple batch list; lab_results: long list of every lab result
 - company-wide: orders, loss_orders, product_margin, monthly_trend, supervisors, firms, delivery_overdue, lab_by_test, materials, cost_errors`,
     {
       dataset: {
         type: 'string',
-        enum: ['order_report', 'order_matrix', 'batch_compare', 'batch_lines', 'order_lab', 'order_cost', 'order_batches', 'lab_results', 'orders', 'loss_orders', 'product_margin', 'monthly_trend', 'supervisors', 'firms', 'delivery_overdue', 'lab_by_test', 'materials', 'cost_errors'],
+        enum: ['order_report', 'production_sheet', 'order_matrix', 'batch_compare', 'batch_lines', 'order_lab', 'order_cost', 'order_batches', 'lab_results', 'orders', 'loss_orders', 'product_margin', 'monthly_trend', 'supervisors', 'firms', 'delivery_overdue', 'lab_by_test', 'materials', 'cost_errors'],
       },
       format: { type: 'string', enum: ['xlsx', 'csv'], description: 'xlsx for Excel (default; keeps colours and multiple sheets), csv only when the user says CSV.' },
       do_no: str('DO number for order-level datasets (order A for batch_compare). null otherwise.'),
@@ -81,7 +82,7 @@ The file appears as a download button in the chat. Pick the dataset that matches
       b_do_no: str('batch_compare: DO of batch B (null = same DO as A).'),
       b_batch: int('batch_compare: batch number B. null if b_job_card is given.'),
       b_job_card: str('batch_compare: job card of batch B. null if b_batch is given.'),
-      query: str('Search text for orders / materials. null = all.'),
+      query: str('Search text for orders (DO, PO, product, party) / materials. null = all.'),
       firm: str('PMMPL, RKL or PURAB filter. null = all.'),
       severity: { type: ['string', 'null'], enum: ['major', 'minor', 'ok', 'none', null], description: 'Order status filter for orders. null = any.' },
       filename: str('Short file name without extension. null = automatic.'),
