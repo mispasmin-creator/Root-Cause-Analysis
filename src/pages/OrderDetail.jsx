@@ -1,3 +1,4 @@
+import PdfButton from '../components/PdfButton.jsx'
 import { useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useData } from '../context/DataContext.jsx'
@@ -197,6 +198,7 @@ function BatchVsBatch({ order, settings }) {
       <div className="card-head" style={{ alignItems: 'flex-end' }}>
         {pick(a, setA, 'Base (expected / earlier)')}
         {pick(b, setB, 'Compare (actual / later)')}
+        <PdfButton title="Batch vs batch comparison" />
       </div>
       {result ? (
         <>
@@ -237,6 +239,7 @@ function CompositionHistory({ order, settings, onSelectBatch }) {
               <div className="row">
                 <h3>{g.label}</h3>
                 <Badge tone={g.severity}>{g.severity === 'ok' ? 'As per approved' : 'Changed vs approved'}</Badge>
+                <PdfButton />
               </div>
               <span className="faint" style={{ fontSize: 12 }}>
                 {fmtNum(g.qty)} MT · {g.batches.length} batch{g.batches.length === 1 ? '' : 'es'} ·{' '}
@@ -301,6 +304,7 @@ function CompositionHistory({ order, settings, onSelectBatch }) {
                   {c.no} <span className="faint">· revision {c.revision}</span>
                 </h3>
                 <Badge tone={c.status === 'Management Approved' ? 'ok' : 'info'}>{c.status || 'Draft'}</Badge>
+                <PdfButton />
               </div>
               <span className="faint" style={{ fontSize: 12 }}>
                 created {fmtDate(c.date)} · standard for {used.length} batch{used.length === 1 ? '' : 'es'}

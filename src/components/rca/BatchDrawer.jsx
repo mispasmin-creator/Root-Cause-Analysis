@@ -1,3 +1,4 @@
+import PdfButton from '../PdfButton.jsx'
 import { useEffect } from 'react'
 import { useData } from '../../context/DataContext.jsx'
 import { fmtDate, fmtInr, fmtMt, fmtNum } from '../../lib/format.js'
@@ -97,6 +98,7 @@ export default function BatchDrawer({ order, batch, onClose }) {
           <section className="card">
             <div className="card-head">
               <h3>vs standard composition {batch.standard ? `(${batch.standard.no})` : ''}</h3>
+              <PdfButton />
             </div>
             {batch.vsStandard ? (
               <CompareTable
@@ -117,6 +119,7 @@ export default function BatchDrawer({ order, batch, onClose }) {
                 <h3>
                   vs previous batch (B{prev.seq} · {prev.jobCard})
                 </h3>
+                <PdfButton />
               </div>
               <CompareTable result={batch.vsPrev} baseLabel={`B${prev.seq}`} actualLabel={`B${batch.seq}`} names={order.names} unitFixed={fixedKeys} />
             </section>

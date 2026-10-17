@@ -5,6 +5,7 @@ import { fmtDate, fmtInr, fmtNum } from '../lib/format.js'
 import { firmLabel } from '../lib/normalize.js'
 import { Badge, Empty, Kpi, Notice } from './ui.jsx'
 import Pagination from './Pagination.jsx'
+import PdfButton from './PdfButton.jsx'
 import { usePagination } from '../lib/pagination.js'
 
 /** ₹ in lakh / crore for headline numbers: ₹9.89 Cr, ₹57.0 L */
@@ -119,6 +120,7 @@ function LossOrders({ biz }) {
         <span className="faint" style={{ fontSize: 12 }}>
           batches where RM + mfg cost &gt; sales value
         </span>
+        <PdfButton />
       </div>
       {list.length === 0 ? (
         <Empty title="No loss-making batches" />
@@ -182,6 +184,7 @@ function ProductMargins({ biz }) {
             Highest
           </button>
         </div>
+        <PdfButton />
       </div>
       {list.length === 0 ? (
         <Empty title="Not enough batches" />
@@ -243,6 +246,7 @@ export function QualitySection({ biz }) {
             <Badge tone={lab.rate >= 70 ? 'ok' : lab.rate >= 50 ? 'minor' : 'major'}>
               {fmtNum(lab.ok, 0)}/{fmtNum(lab.checks, 0)} results on target ({pct(lab.rate, 0)})
             </Badge>
+            <PdfButton />
           </div>
           <div className="card-body" style={{ borderBottom: '1px solid var(--border)' }}>
             <div className="muted" style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
@@ -298,6 +302,7 @@ export function QualitySection({ biz }) {
             <span className="faint" style={{ fontSize: 12 }}>
               by production date · months with ≥ 5 batches
             </span>
+            <PdfButton />
           </div>
           {months.length === 0 ? (
             <Empty title="No production yet" />
@@ -356,6 +361,7 @@ function PeopleTable({ title, sub, rows, nameFmt = (n) => n }) {
         <span className="faint" style={{ fontSize: 12 }}>
           {sub}
         </span>
+        <PdfButton />
       </div>
       {rows.length === 0 ? (
         <Empty title="No data" />
@@ -431,6 +437,16 @@ export function OpsSection({ biz }) {
               <Badge tone={d.overdue ? 'major' : 'ok'}>
                 {d.overdue} overdue · {fmtNum(d.overdueMt, 0)} MT
               </Badge>
+              <PdfButton
+                title="Delivery pending - overdue orders"
+                filename="rca-overdue-orders"
+                disabled={!d.overdueList.length}
+                getData={() => ({
+                  head: ['Order', 'Firm', 'Product', 'Pending (MT)', 'Order qty (MT)', 'Expected', 'Late by (days)'],
+                  align: [undefined, undefined, undefined, 'right', 'right', undefined, 'right'],
+                  body: d.overdueList.map((x) => [x.order.doNo, firmLabel(x.order.firm), x.order.product, fmtNum(x.pending, 0), fmtNum(x.order.orderQty, 0), fmtDate(x.due), x.overdueDays]),
+                })}
+              />
             </div>
           </div>
           {d.overdueList.length === 0 ? (
@@ -504,10 +520,19 @@ export function OpsSection({ biz }) {
             ))}
           </div>
           {q.costErrors.length > 0 && (
-            <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)' }}>
+            <div className="row" style={{ padding: '10px 16px', borderTop: '1px solid var(--border)' }}>
               <button className="btn btn-sm" onClick={() => setShowErrors((v) => !v)} type="button">
                 {showErrors ? 'Hide' : 'Show'} impossible-cost batches
               </button>
+              <PdfButton
+                title="Data quality - impossible-cost batches"
+                filename="rca-impossible-cost-batches"
+                getData={() => ({
+                  head: ['Order', 'Batch', 'Product', 'Composition cost', 'Saved actual cost', 'Ratio'],
+                  align: [undefined, undefined, undefined, 'right', 'right', 'right'],
+                  body: q.costErrors.map(({ b, o, expected, actual }) => [o.doNo, b.jobCard, o.product, fmtInr(expected), fmtInr(actual), `${(actual / expected).toFixed(actual / expected < 1 ? 2 : 0)}x`]),
+                })}
+              />
             </div>
           )}
           {showErrors && (

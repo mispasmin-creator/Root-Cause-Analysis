@@ -1,3 +1,4 @@
+import PdfButton from '../PdfButton.jsx'
 import { fmtNum } from '../../lib/format.js'
 import { Badge, Empty } from '../ui.jsx'
 import { SEVERITY_LABEL } from '../../lib/constants.js'
@@ -28,6 +29,7 @@ export default function ProductionSheet({ order, onSelectBatch }) {
         <div className="row">
           <Badge>{groups.length} production group{groups.length === 1 ? '' : 's'}</Badge>
           <Badge tone="brand">Total {fmtNum(order.producedQty)} MT</Badge>
+          <PdfButton />
         </div>
       </div>
 

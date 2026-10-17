@@ -1,3 +1,4 @@
+import PdfButton from '../PdfButton.jsx'
 import { useState } from 'react'
 import { fmtDate } from '../../lib/format.js'
 import { SEVERITY_LABEL } from '../../lib/constants.js'
@@ -45,6 +46,7 @@ export default function BatchMatrix({ order, onSelectBatch, selectedId }) {
           ]}
         />
         <span className="spacer" />
+        <PdfButton />
         <div className="legend">
           <span>
             <i style={{ background: 'var(--minor-bg)', border: '1px solid var(--minor)' }} />

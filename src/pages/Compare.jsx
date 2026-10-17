@@ -1,3 +1,4 @@
+import PdfButton from '../components/PdfButton.jsx'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useData } from '../context/DataContext.jsx'
@@ -109,6 +110,7 @@ export default function Compare() {
           </div>
           {sources.length > 1 && select(A, setA, 'Base')}
           {sources.length > 1 && select(B, setB, 'Compare')}
+          <PdfButton title="Compare compositions / batches" disabled={!result} />
         </div>
         {!result ? (
           <Empty title="Need two different sources">This product has fewer than two batches/compositions, or both pickers point to the same one.</Empty>

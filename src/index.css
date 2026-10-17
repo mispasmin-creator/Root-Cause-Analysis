@@ -330,6 +330,9 @@ textarea {
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
+.card-head > .btn:last-child {
+  margin-left: auto;
+}
 .card-head h2,
 .card-head h3 {
   margin: 0;

@@ -1,3 +1,4 @@
+import PdfButton from '../PdfButton.jsx'
 import { useMemo } from 'react'
 import { summarizeLab } from '../../lib/rca.js'
 import { fmtNum } from '../../lib/format.js'
@@ -115,6 +116,7 @@ export default function LabTab({ order, onSelectBatch }) {
               {matched}/{judged} results matched ({((matched / judged) * 100).toFixed(0)}%)
             </span>
           )}
+          <PdfButton />
         </div>
       </div>
 

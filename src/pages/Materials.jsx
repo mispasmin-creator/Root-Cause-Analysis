@@ -3,6 +3,7 @@ import { useData } from '../context/DataContext.jsx'
 import { exportCsv } from '../lib/exportCsv.js'
 import { Badge, Empty } from '../components/ui.jsx'
 import { IconDownload, IconSearch } from '../components/Icons.jsx'
+import PdfButton from '../components/PdfButton.jsx'
 import Pagination from '../components/Pagination.jsx'
 import { usePagination } from '../lib/pagination.js'
 
@@ -60,6 +61,7 @@ export default function Materials() {
             How often each raw material is off its standard % across all batches. <b>Bias</b> &gt; 0 means it is usually over-used.
           </p>
         </div>
+        <div className="row">
         <button
           className="btn"
           onClick={() =>
@@ -81,6 +83,21 @@ export default function Materials() {
         >
           <IconDownload /> Export CSV
         </button>
+        <PdfButton
+          small={false}
+          label="Export PDF"
+          title="Raw materials"
+          filename="rca-materials"
+          disabled={!rows.length}
+          subtitle={`${rows.length} materials`}
+          filters={[['Search', q], ['Min batches', minBatches]]}
+          getData={() => ({
+            head: ['Raw material', 'Batches', 'Off-standard %', 'Avg |d| pp', 'Bias pp', 'Used, not in std', 'Skipped', 'Products'],
+            align: [undefined, 'right', 'right', 'right', 'right', 'right', 'right'],
+            body: rows.map((m) => [m.name, m.batches, m.deviationRate.toFixed(1), m.avgAbsDev.toFixed(2), (m.avgDev > 0 ? '+' : '') + m.avgDev.toFixed(2), m.added, m.missing, m.products.join(', ')]),
+          })}
+        />
+        </div>
       </div>
       <section className="card">
         <div className="card-head">

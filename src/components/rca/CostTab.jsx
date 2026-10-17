@@ -3,6 +3,7 @@ import { summarizeCost } from '../../lib/rca.js'
 import { fmtDate, fmtInr, fmtNum } from '../../lib/format.js'
 import { Empty, Kpi, Notice } from '../ui.jsx'
 import Pagination from '../Pagination.jsx'
+import PdfButton from '../PdfButton.jsx'
 import { usePagination } from '../../lib/pagination.js'
 
 const diffColor = (d) => (d > 0 ? 'var(--major)' : d < 0 ? 'var(--ok)' : undefined)
@@ -49,6 +50,32 @@ export default function CostTab({ order, onSelectBatch }) {
           <span className="faint" style={{ fontSize: 12 }}>
             red = costlier than composition · green = cheaper
           </span>
+          <PdfButton
+            title={`Batch-wise cost - ${order.doNo} ${order.product}`}
+            filename={`rca-cost-${order.doNo}`}
+            getData={() => ({
+              head: ['Batch', 'Date', 'FG (MT)', 'Expected RM cost', 'Actual RM cost', 'Difference', 'Diff %', 'Expected Rs/MT', 'Actual Rs/MT', 'Final costing Rs/MT'],
+              align: [undefined, undefined, 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'right'],
+              body: order.batches.map((b) => {
+                const { expected, costingPerMt } = b.cost
+                const actual = b.cost.actualCorrected ?? b.cost.actual
+                const d = expected !== null && actual !== null ? actual - expected : null
+                return [
+                  `B${b.seq} ${b.jobCard}`,
+                  fmtDate(b.date),
+                  fmtNum(b.fgQty),
+                  fmtInr(expected),
+                  fmtInr(actual),
+                  signedInr(d),
+                  d !== null && expected ? signedPct((d / expected) * 100) : '—',
+                  expected !== null && b.fgQty ? fmtInr(expected / b.fgQty) : '—',
+                  actual !== null && b.fgQty ? fmtInr(actual / b.fgQty) : '—',
+                  costingPerMt === null ? 'pending' : fmtInr(costingPerMt),
+                ]
+              }),
+              foot: [`Total (${s.batches} batches)`, '', fmtNum(s.fg), fmtInr(s.expected), fmtInr(s.actual), signedInr(s.diff), signedPct(s.diffPct), fmtInr(s.expectedPerMt), fmtInr(s.actualPerMt), s.costingPerMt === null ? '—' : fmtInr(s.costingPerMt)],
+            })}
+          />
         </div>
         <div className="table-wrap">
           <table className="tbl">

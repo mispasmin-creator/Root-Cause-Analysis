@@ -6,7 +6,9 @@ import { firmLabel } from '../lib/normalize.js'
 import { exportCsv } from '../lib/exportCsv.js'
 import { Badge, Empty, Progress, SevBar, SeverityBadge } from '../components/ui.jsx'
 import { IconDownload, IconSearch } from '../components/Icons.jsx'
+import PdfButton from '../components/PdfButton.jsx'
 import Pagination from '../components/Pagination.jsx'
+import { SEVERITY_LABEL } from '../lib/constants.js'
 import { usePagination } from '../lib/pagination.js'
 
 const SORTS = {
@@ -114,9 +116,37 @@ export default function Orders() {
           <h1>Orders & batches</h1>
           <p>Production orders (from “For Production Planning”) with their batch-wise composition deviation.</p>
         </div>
-        <button className="btn" onClick={doExport} disabled={!rows.length}>
-          <IconDownload /> Export CSV
-        </button>
+        <div className="row">
+          <button className="btn" onClick={doExport} disabled={!rows.length}>
+            <IconDownload /> Export CSV
+          </button>
+          <PdfButton
+            small={false}
+            label="Export PDF"
+            title="Orders & batches"
+            filename="rca-orders"
+            disabled={!rows.length}
+            subtitle={`${rows.length} orders`}
+            filters={[['Search', q], ['Firm', firm], ['Party', party], ['PO', po], ['Status', sev]]}
+            getData={() => ({
+              head: ['DO', 'PO', 'Product', 'Party', 'Firm', 'Produced / Ordered (MT)', 'Batches', 'Composition', 'OK / Minor / Major', 'Avg shift', 'Overall'],
+              align: [undefined, undefined, undefined, undefined, undefined, 'right', 'right', undefined, undefined, 'right'],
+              body: rows.map((o) => [
+                o.doNo,
+                o.poNo || '',
+                o.product,
+                o.party || '',
+                firmLabel(o.firm),
+                `${fmtNum(o.producedQty)} / ${o.orderQty ? fmtNum(o.orderQty) : '-'}`,
+                o.batches.length,
+                o.compositions.length ? o.compositions[o.compositions.length - 1].no + (o.compositions.length > 1 ? ` (${o.compositions.length} rev)` : '') : 'Not linked',
+                o.batches.length ? `${o.batchCounts.ok} / ${o.batchCounts.minor} / ${o.batchCounts.major}` : '-',
+                o.batches.length ? `${o.avgShift.toFixed(1)}%` : '-',
+                SEVERITY_LABEL[o.severity] || 'No batches',
+              ]),
+            })}
+          />
+        </div>
       </div>
 
       <div className="card">

@@ -1,3 +1,4 @@
+import PdfButton from '../components/PdfButton.jsx'
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useData } from '../context/DataContext.jsx'
@@ -99,6 +100,7 @@ export default function Dashboard() {
             <Link to="/materials" className="btn btn-ghost btn-sm">
               All <IconArrowRight />
             </Link>
+            <PdfButton />
           </div>
           {topMaterials.length === 0 ? (
             <Empty title="Not enough batches yet" />
@@ -143,6 +145,7 @@ export default function Dashboard() {
       <section className="card">
         <div className="card-head">
           <h2>Latest batches with major deviation</h2>
+          <PdfButton />
         </div>
         {recent.length === 0 ? (
           <Empty title="No major deviations" />
