@@ -28,9 +28,19 @@ function loadChat(user) {
     return null
   }
 }
+const MAX_STORED_BYTES = 200_000 // keep the saved chat small (browser storage is ~5 MB per site)
 function storeChat(user, data) {
   try {
-    localStorage.setItem(storeKey(user), JSON.stringify(data))
+    // nothing to remember → no entry at all (visiting pages never writes to storage)
+    if (!data.messages.length) return localStorage.removeItem(storeKey(user))
+    let msgs = data.messages
+    let json = JSON.stringify({ ...data, messages: msgs })
+    // drop the oldest messages until it fits the size limit
+    while (json.length > MAX_STORED_BYTES && msgs.length > 2) {
+      msgs = msgs.slice(2)
+      json = JSON.stringify({ ...data, messages: msgs })
+    }
+    localStorage.setItem(storeKey(user), json)
   } catch {
     // storage full / blocked — chat still works, just won't survive a refresh
   }

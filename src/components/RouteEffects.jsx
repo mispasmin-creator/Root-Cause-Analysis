@@ -7,6 +7,7 @@ const TITLES = [
   [/^\/orders/, 'Orders & Batches'],
   [/^\/compare/, 'Compare Batches'],
   [/^\/materials/, 'Raw Materials'],
+  [/^\/rnd/, 'R&D Insights'],
   [/^\/login/, 'Sign in'],
 ]
 

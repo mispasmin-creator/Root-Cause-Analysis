@@ -9,6 +9,7 @@ import Orders from './pages/Orders.jsx'
 import OrderDetail from './pages/OrderDetail.jsx'
 import Compare from './pages/Compare.jsx'
 import Materials from './pages/Materials.jsx'
+import RnD from './pages/RnD.jsx'
 import RouteEffects from './components/RouteEffects.jsx'
 
 function RequireAuth({ children }) {
@@ -49,6 +50,7 @@ export default function App() {
               <Route path="orders/:key" element={<OrderDetail />} />
               <Route path="compare" element={<Compare />} />
               <Route path="materials" element={<Materials />} />
+              <Route path="rnd" element={<RnD />} />
               {/* old Settings page was removed — send old bookmarks to the dashboard */}
               <Route path="settings" element={<Navigate to="/" replace />} />
               <Route path="*" element={<NotFound />} />

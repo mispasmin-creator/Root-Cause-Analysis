@@ -58,6 +58,58 @@ export default function ProductionSheet({ order, onSelectBatch }) {
           </tbody>
         </table>
       </div>
+
+      {/* remarks under all compositions: left 50 % system remarks, right 50 % user (root cause) remarks — each by composition name.
+          Kept outside the (horizontally scrolling) composition table and height-capped so many compositions don't take over the page. */}
+      <div className="psheet-remarks">
+        <div>
+          <div className="psheet-remarks-h">System remarks</div>
+          <div className="psheet-remarks-list">
+            {groups.map((g) => (
+              <div key={g.id} className="psheet-remarks-item">
+                <b>{g.label}:</b>{' '}
+                {!g.remarksSheet.length && !g.remarksAuto.length ? (
+                  <span className="faint">As per composition</span>
+                ) : (
+                  <>
+                    {g.remarksSheet.map((r, i) => (
+                      <div key={`a${i}`} style={{ whiteSpace: 'pre-wrap' }}>
+                        {r}
+                      </div>
+                    ))}
+                    {g.remarksAuto.map((r, i) => (
+                      <div key={`r${i}`} className="psheet-auto">
+                        {r}
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="psheet-remarks-h">User remarks</div>
+          <div className="psheet-remarks-list">
+            {groups.some((g) => g.remarksReview.length) ? (
+              groups
+                .filter((g) => g.remarksReview.length)
+                .map((g) => (
+                  <div key={g.id} className="psheet-remarks-item">
+                    <b>{g.label}:</b>
+                    {g.remarksReview.map((r, i) => (
+                      <div key={i} style={{ whiteSpace: 'pre-wrap' }}>
+                        {r}
+                      </div>
+                    ))}
+                  </div>
+                ))
+            ) : (
+              <span className="faint">No root cause added yet</span>
+            )}
+          </div>
+        </div>
+      </div>
       {order.compositions.length > 0 && (
         <div className="faint" style={{ padding: '8px 16px', fontSize: 12, borderBottom: '1px solid var(--border)' }}>
           Approved composition (reference for remarks):{' '}
@@ -78,8 +130,6 @@ export default function ProductionSheet({ order, onSelectBatch }) {
               <th>Job card no.</th>
               <th>Product</th>
               <th className="r">Quantity</th>
-              <th>Production</th>
-              <th>Remarks</th>
             </tr>
           </thead>
           <tbody>
@@ -111,29 +161,6 @@ export default function ProductionSheet({ order, onSelectBatch }) {
                 <td className="r num" style={{ fontWeight: 600 }}>
                   {fmtNum(g.qty)}
                 </td>
-                <td>
-                  {g.entered.map((e, i) => (
-                    <div key={i} className="nowrap">
-                      {e.name}: {fmtNum(e.qty, 3)}
-                    </div>
-                  ))}
-                  <div className="faint" style={{ fontSize: 11, marginTop: 4 }}>
-                    as entered for {g.rep.jobCard} ({fmtNum(g.rep.fgQty)} MT)
-                  </div>
-                </td>
-                <td style={{ minWidth: 220 }}>
-                  {g.remarksActual.map((r, i) => (
-                    <div key={`a${i}`} style={{ whiteSpace: 'pre-wrap' }}>
-                      {r}
-                    </div>
-                  ))}
-                  {g.remarksAuto.map((r, i) => (
-                    <div key={`r${i}`} className="psheet-auto">
-                      {r}
-                    </div>
-                  ))}
-                  {!g.remarksActual.length && !g.remarksAuto.length && <span className="faint">As per composition</span>}
-                </td>
               </tr>
             ))}
           </tbody>
@@ -144,14 +171,13 @@ export default function ProductionSheet({ order, onSelectBatch }) {
               <td className="r num" style={{ fontWeight: 700 }}>
                 {fmtNum(order.producedQty)} MT
               </td>
-              <td colSpan={2} />
             </tr>
           </tfoot>
         </table>
       </div>
       <div className="faint" style={{ padding: '10px 16px', fontSize: 12, borderTop: '1px solid var(--border)' }}>
-        Each composition above = one production group (batches with the same mix), % of the batch quantity. Remarks in normal text are as typed in Production-FMS / RCA; remarks in <i>italic</i> are generated
-        (English) by comparing the group’s mix with {order.compositions.length ? `composition ${order.compositions[order.compositions.length - 1].no}` : 'the composition'}.
+        Each composition above = one production group (batches with the same mix), % of the batch quantity. System remarks in normal text are as typed in Production-FMS; remarks in <i>italic</i> are generated
+        (English) by comparing the group’s mix with {order.compositions.length ? `composition ${order.compositions[order.compositions.length - 1].no}` : 'the composition'}. User remarks = root causes saved on the group’s batches.
       </div>
     </section>
   )

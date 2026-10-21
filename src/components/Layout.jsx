@@ -5,6 +5,7 @@ import { useData } from '../context/DataContext.jsx'
 import { Loader, Notice } from './ui.jsx'
 import ChatPanel from './ChatPanel.jsx'
 import {
+  IconBeaker,
   IconCompare,
   IconDashboard,
   IconLayers,
@@ -19,6 +20,7 @@ const NAV = [
   { to: '/orders', label: 'Orders & Batches', icon: IconOrders },
   { to: '/compare', label: 'Compare Batches', icon: IconCompare },
   { to: '/materials', label: 'Raw Materials', icon: IconLayers },
+  { to: '/rnd', label: 'R&D Insights', icon: IconBeaker },
 ]
 
 export default function Layout() {

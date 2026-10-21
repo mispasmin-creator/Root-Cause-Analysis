@@ -104,6 +104,7 @@ export function parseBatch(row, settings) {
   const rmTotal = merged.reduce((s, x) => s + x.value, 0)
   const lab = {}
   for (const f of LAB_FIELDS) lab[f.key] = numOrNull(row[f.key])
+  if (lab.PLCAt1100C !== null) lab.PLCAt1100C = Math.abs(lab.PLCAt1100C) // stored negative (-0.24), targets are positive
   return {
     id: row.id,
     jobCard: row['Job Card No.'] || '—',
@@ -286,6 +287,16 @@ export function buildModel(raw, settings) {
   // job cards → order
   for (const jc of raw.jobcards) {
     let p = jc['Production Id'] ? prodIdx.byId.get(jc['Production Id']) : null
+    // same rule as batches below: trust the Production Id only when that row has the job card's own DO + product
+    if (
+      p &&
+      jc['Delivery Order No.'] &&
+      !(
+        (normalizeKey(p['Delivery Order No.']) === normalizeKey(jc['Delivery Order No.']) || numericDo(p['Delivery Order No.']) === numericDo(jc['Delivery Order No.'])) &&
+        normalizeKey(p['Product Name']) === normalizeKey(jc['Product Name'])
+      )
+    )
+      p = null
     if (!p) p = findProduction(prodIdx, jc['Delivery Order No.'], jc['Product Name'], jc['Firm Name'])
     if (p) orders.get(`p${p.id}`).jobcards.push(jc)
   }
@@ -619,6 +630,15 @@ export function buildGroups(order) {
       severity: first.severity,
       remarksActual: [...actual, ...notes, ...new Set(reviews)], // shown exactly as typed
       remarksAuto: autoRemarks(first.vsStandard, order.names),
+      // production sheet splits remarks: sheet / system side vs the root-cause remarks users save on batches
+      remarksSheet: [...new Set([...actual, ...notes])],
+      remarksReview: [
+        ...new Set(
+          batches.flatMap((b) =>
+            (b.reviews || []).map((r) => [r.root_cause_category, r.root_cause_detail].filter(Boolean).join(': ')).filter(Boolean).map((t) => `${b.jobCard} — ${t}`),
+          ),
+        ),
+      ],
     }
   })
 }
@@ -730,7 +750,9 @@ const fmtTarget = (r, unit) => {
 export function compareLab(standard, raw) {
   const comp = standard?.raw || {}
   const items = LAB_SPECS.map((spec) => {
-    const actualText = raw?.[spec.actual] ?? null
+    let actualText = raw?.[spec.actual] ?? null
+    // PLC is stored negative in Lab Test (-0.24) while targets are positive (0.2-0.3) → shown / judged as positive
+    if (spec.key === 'plc' && actualText !== null) actualText = String(actualText).trim().replace(/^-\s*/, '')
     const out = { ...spec, actualText, targetText: null, target: null, actual: null, status: 'na', diff: null }
 
     if (spec.kind === 'chem') {

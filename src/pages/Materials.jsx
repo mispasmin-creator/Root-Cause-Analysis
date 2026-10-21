@@ -1,5 +1,8 @@
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useData } from '../context/DataContext.jsx'
+import { aggregateMaterials } from '../lib/rca.js'
+import { firmLabel } from '../lib/normalize.js'
 import { exportCsv } from '../lib/exportCsv.js'
 import { Badge, Empty } from '../components/ui.jsx'
 import { IconDownload, IconSearch } from '../components/Icons.jsx'
@@ -20,13 +23,34 @@ const COLS = [
 /** Which raw materials drive deviation across all orders — the "where to look first" list. */
 export default function Materials() {
   const { model } = useData()
+  // Firm + Raw material filters (kept in the URL); raw material list follows the firm filter
+  const [params, setParams] = useSearchParams()
+  const firm = params.get('firm') || ''
+  const rm = params.get('rm') || ''
+  const setFilter = (key, value, clear = []) => {
+    const next = new URLSearchParams(params)
+    if (value) next.set(key, value)
+    else next.delete(key)
+    clear.forEach((k) => next.delete(k))
+    next.delete('page') // filters changed → back to page 1
+    setParams(next, { replace: true })
+  }
+  const withBatches = useMemo(() => model.orders.filter((o) => o.batches.length > 0), [model])
+  const firms = useMemo(() => [...new Set(withBatches.map((o) => firmLabel(o.firm)))].filter((f) => f !== '—').sort(), [withBatches])
+  // no firm → the app-wide list exactly as before; with a firm → recomputed from that firm's orders only
+  const materials = useMemo(
+    () => (firm ? aggregateMaterials(withBatches.filter((o) => firmLabel(o.firm) === firm)) : model.materials),
+    [model, withBatches, firm],
+  )
+  const rmOptions = useMemo(() => [...materials].sort((a, b) => a.name.localeCompare(b.name)), [materials])
   const [q, setQ] = useState('')
   const [sort, setSort] = useState({ key: 'deviationRate', dir: -1 })
   const [minBatches, setMinBatches] = useState(3)
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
-    return model.materials
+    return materials
+      .filter((m) => !rm || m.key === rm)
       .filter((m) => m.batches >= minBatches)
       .filter((m) => !needle || m.name.toLowerCase().includes(needle) || m.products.some((p) => String(p).toLowerCase().includes(needle)))
       .sort((a, b) => {
@@ -34,7 +58,7 @@ export default function Materials() {
         const y = b[sort.key]
         return (typeof x === 'string' ? x.localeCompare(y) : x - y) * sort.dir
       })
-  }, [model, q, sort, minBatches])
+  }, [materials, rm, q, sort, minBatches])
 
   const pg = usePagination(rows.length)
 
@@ -90,7 +114,7 @@ export default function Materials() {
           filename="rca-materials"
           disabled={!rows.length}
           subtitle={`${rows.length} materials`}
-          filters={[['Search', q], ['Min batches', minBatches]]}
+          filters={[['Firm', firm], ['Raw material', rmOptions.find((m) => m.key === rm)?.name || ''], ['Search', q], ['Min batches', minBatches]]}
           getData={() => ({
             head: ['Raw material', 'Batches', 'Off-standard %', 'Avg |d| pp', 'Bias pp', 'Used, not in std', 'Skipped', 'Products'],
             align: [undefined, 'right', 'right', 'right', 'right', 'right', 'right'],
@@ -108,17 +132,33 @@ export default function Materials() {
               pg.setPage(1)
             }} aria-label="Search materials" />
           </div>
-          <label className="row muted" style={{ fontSize: 13 }}>
-            Min batches
-            <select className="select" value={minBatches} onChange={(e) => {
-              setMinBatches(Number(e.target.value))
-              pg.setPage(1)
-            }}>
-              {[1, 3, 5, 10, 25].map((n) => (
-                <option key={n}>{n}</option>
+          <div className="row">
+            <select className="select" value={firm} onChange={(e) => setFilter('firm', e.target.value, ['rm'])} aria-label="Firm">
+              <option value="">All firms</option>
+              {firms.map((f) => (
+                <option key={f}>{f}</option>
               ))}
             </select>
-          </label>
+            <select className="select" value={rm} onChange={(e) => setFilter('rm', e.target.value)} aria-label="Raw material" style={{ maxWidth: 240 }}>
+              <option value="">All raw materials</option>
+              {rmOptions.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+            <label className="row muted" style={{ fontSize: 13 }}>
+              Min batches
+              <select className="select" value={minBatches} onChange={(e) => {
+                setMinBatches(Number(e.target.value))
+                pg.setPage(1)
+              }}>
+                {[1, 3, 5, 10, 25].map((n) => (
+                  <option key={n}>{n}</option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
         {rows.length === 0 ? (
           <Empty title="No materials match" />
