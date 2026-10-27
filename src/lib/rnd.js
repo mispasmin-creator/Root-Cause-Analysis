@@ -1,229 +1,111 @@
-// R&D insights — read-only analysis of one product across all its orders and batches.
-// Pure functions over the built model (no React, no Supabase) so they can be checked from Node.
-//
-// Lab score  = % of the batch's judged lab tests that are inside the composition target (null when none judged).
-//              Very few batches meet every target, so "good" / "weak" are relative to the product:
-//              good = top 25 % of its batches by lab score, weak = bottom 25 %.
-// RM cost/MT = kg-corrected actual RM cost ÷ FG qty; cost-error batches (isCostError) are left out.
+// R&D — pure functions over the built model (no React, no Supabase) so they can be checked from Node.
+// Input is { batches: [{ b, o }] } — b = batch, o = its order.
 
-import { LAB_SPECS, isCostError } from './rca.js'
-import { materialKey, firmLabel } from './normalize.js'
+import { autoRemarks } from './rca.js'
 
-export const labScore = (b) => (b.labCheck?.checked ? ((b.labCheck.checked - b.labCheck.out) / b.labCheck.checked) * 100 : null)
+// ---------------------------------------------------------------------------------------------
+// Phase 1 — data quality check: does the remark the user wrote (root cause) agree with what the
+// system itself found for the batch (auto remark from the mix comparison + lab)?
+// ---------------------------------------------------------------------------------------------
 
-export function rmCostPerMt(b) {
-  const a = b.cost.actualCorrected ?? b.cost.actual
-  if (!(a > 0) || !(b.fgQty > 0) || isCostError(b)) return null
-  return a / b.fgQty
+/** What each root-cause category needs the system to have seen, to be believable. */
+const CAUSE_NEEDS = {
+  'Raw material shortage / substitution': { sub: true, text: 'a material replaced / added / skipped' },
+  'Planned composition change': { mix: true, text: 'a change in the mix' },
+  'Raw material quality (lot variation)': { mix: true, lab: true, text: 'a quantity change or a lab failure' },
+  'Weighing / measurement error': { qty: true, text: 'a quantity off the composition' },
+  'Operator / process error': { mix: true, lab: true, text: 'a mix change or a lab failure' },
+  'Data entry error (unit / qty)': { kg: true, qty: true, text: 'a kg entry or a quantity off the composition' },
+  'Lab instruction': { mix: true, text: 'a change in the mix' },
 }
 
-const avg = (arr) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null)
-
-function quantile(sorted, q) {
-  if (!sorted.length) return null
-  const pos = (sorted.length - 1) * q
-  const lo = Math.floor(pos)
-  const hi = Math.ceil(pos)
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo)
-}
-
-function pearson(xs, ys) {
-  const n = xs.length
-  const mx = avg(xs)
-  const my = avg(ys)
-  let sxy = 0
-  let sxx = 0
-  let syy = 0
-  for (let i = 0; i < n; i++) {
-    const dx = xs[i] - mx
-    const dy = ys[i] - my
-    sxy += dx * dy
-    sxx += dx * dx
-    syy += dy * dy
-  }
-  return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : null
-}
-
-/** Products that have batches, most batches first — the R&D product picker. */
-export function rndProducts(orders, firm = '') {
-  const m = new Map()
-  for (const o of orders) {
-    if (!o.batches.length) continue
-    if (firm && firmLabel(o.firm) !== firm) continue
-    const k = materialKey(o.product)
-    const e = m.get(k) || { key: k, name: o.product, orders: 0, batches: 0 }
-    e.orders += 1
-    e.batches += o.batches.length
-    m.set(k, e)
-  }
-  return [...m.values()].sort((a, b) => b.batches - a.batches)
-}
-
-/** Everything the R&D page shows for one product. */
-export function analyseProduct(orders, productKey, firm = '') {
-  const pOrders = orders.filter((o) => o.batches.length && materialKey(o.product) === productKey && (!firm || firmLabel(o.firm) === firm))
-  const names = {}
-  for (const o of pOrders) for (const [k, v] of Object.entries(o.names)) names[k] ??= v
-
-  const batches = pOrders
-    .flatMap((o) => o.batches.map((b) => ({ b, o, score: labScore(b), costMt: rmCostPerMt(b) })))
-    .sort((x, y) => (x.b.sortKey || 0) - (y.b.sortKey || 0))
-  const scored = batches.filter((x) => x.score !== null)
-  const scores = scored.map((x) => x.score).sort((a, b) => a - b)
-  const hiCut = quantile(scores, 0.75)
-  const loCut = quantile(scores, 0.25)
-  // no spread (every batch scored the same) → no good / weak split
-  const split = scored.length >= 4 && hiCut > loCut
-  const pass = split ? scored.filter((x) => x.score >= hiCut) : []
-  const fail = split ? scored.filter((x) => x.score <= loCut) : []
-  pass.forEach((x) => (x.verdict = 'good'))
-  fail.forEach((x) => (x.verdict = 'weak'))
-  const testsJudged = scored.reduce((s, x) => s + x.b.labCheck.checked, 0)
-  const testsMet = scored.reduce((s, x) => s + x.b.labCheck.checked - x.b.labCheck.out, 0)
-  const costs = batches.map((x) => x.costMt).filter((v) => v !== null)
-
-  // latest approved composition for the product = the reference recipe
-  const comps = pOrders.flatMap((o) => o.compositions.map((c) => ({ c, o })))
-  const latest = comps.reduce((m, x) => (!m || x.c.sortKey > m.c.sortKey ? x : m), null)
-
-  // ---- good vs bad batches: average mix share per material + the range seen in passing batches
-  const keys = new Set()
-  batches.forEach((x) => Object.keys(x.b.percents || {}).forEach((k) => keys.add(k)))
-  latest?.c.items.forEach((it) => keys.add(it.key))
-  const recipe = [...keys]
-    .map((k) => {
-      const pv = pass.map((x) => x.b.percents?.[k] || 0)
-      const fv = fail.map((x) => x.b.percents?.[k] || 0)
-      // range over the good batches that actually used the material (10th–90th percentile once there are 5+)
-      const sorted = pv.filter((v) => v > 0).sort((a, b) => a - b)
-      const passAvg = avg(pv)
-      const failAvg = avg(fv)
-      return {
-        key: k,
-        name: names[k] || k,
-        approved: latest ? latest.c.percents?.[k] || 0 : null,
-        passAvg,
-        failAvg,
-        delta: passAvg !== null && failAvg !== null ? failAvg - passAvg : null,
-        passUsed: sorted.length,
-        passLo: sorted.length >= 5 ? quantile(sorted, 0.1) : sorted[0] ?? null,
-        passHi: sorted.length >= 5 ? quantile(sorted, 0.9) : sorted[sorted.length - 1] ?? null,
-        usedIn: batches.filter((x) => (x.b.percents?.[k] || 0) > 0).length,
-      }
-    })
-    .filter((r) => r.usedIn > 0 || r.approved > 0)
-    .sort((a, b) => Math.abs(b.delta ?? 0) - Math.abs(a.delta ?? 0) || (b.passAvg ?? 0) - (a.passAvg ?? 0))
-
-  // ---- lab tests: how often each property meets its target, and which way it misses
-  const lab = LAB_SPECS.map((spec) => {
-    const rows = batches.map((x) => x.b.labCheck?.items.find((i) => i.key === spec.key)).filter(Boolean)
-    const judgedRows = rows.filter((r) => ['ok', 'minor', 'major'].includes(r.status))
-    const nums = rows.map((r) => r.actual).filter((v) => v !== null && v !== undefined)
-    const targets = {}
-    rows.forEach((r) => r.targetText && (targets[r.targetText] = (targets[r.targetText] || 0) + 1))
-    const target = Object.entries(targets).sort((a, b) => b[1] - a[1])[0]?.[0] || null
-    return {
-      key: spec.key,
-      label: spec.label,
-      kind: spec.kind,
-      tested: rows.filter((r) => r.status !== 'na').length,
-      judged: judgedRows.length,
-      ok: judgedRows.filter((r) => r.status === 'ok').length,
-      below: judgedRows.filter((r) => r.diff < 0).length,
-      above: judgedRows.filter((r) => r.diff > 0).length,
-      avg: avg(nums),
-      min: nums.length ? Math.min(...nums) : null,
-      max: nums.length ? Math.max(...nums) : null,
-      target,
-    }
-  }).filter((l) => l.tested > 0)
-
-  // ---- per approved composition (recipe version): how its batches performed
-  const byComp = new Map()
-  for (const x of batches) {
-    const c = x.b.standard
-    const k = c ? c.id : 'none'
-    const e = byComp.get(k) || { id: k, no: c ? c.no : 'No composition', date: c?.date || null, doNo: x.o.doNo, batches: [], qty: 0 }
-    e.batches.push(x)
-    e.qty += x.b.fgQty
-    byComp.set(k, e)
-  }
-  const recipes = [...byComp.values()]
-    .map((e) => {
-      const sc = e.batches.map((x) => x.score).filter((v) => v !== null)
-      const cm = e.batches.map((x) => x.costMt).filter((v) => v !== null)
-      const shifts = e.batches.map((x) => x.b.vsStandard?.shift).filter((v) => v !== undefined && v !== null)
-      return {
-        ...e,
-        count: e.batches.length,
-        judged: sc.length,
-        score: avg(sc),
-        costMt: avg(cm),
-        avgShift: avg(shifts),
-      }
-    })
-    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1) || (a.costMt ?? Infinity) - (b.costMt ?? Infinity))
-
-  // ---- best batches: highest lab score, then the most tests judged, then the cheapest
-  const best = [...scored]
-    .sort(
-      (x, y) =>
-        y.score - x.score ||
-        y.b.labCheck.checked - x.b.labCheck.checked ||
-        (x.costMt ?? Infinity) - (y.costMt ?? Infinity),
-    )
-    .slice(0, 10)
-
-  return {
-    orders: pOrders,
-    names,
-    batches,
-    scored: scored.length,
-    split,
-    hiCut,
-    loCut,
-    pass: pass.length,
-    fail: fail.length,
-    avgScore: avg(scores),
-    testsJudged,
-    testsMet,
-    costMt: avg(costs),
-    costMin: costs.length ? Math.min(...costs) : null,
-    costMax: costs.length ? Math.max(...costs) : null,
-    producedQty: batches.reduce((s, x) => s + x.b.fgQty, 0),
-    latest: latest?.c || null,
-    compositions: new Set(comps.map((x) => x.c.no)).size,
-    recipe,
-    lab,
-    recipes,
-    best,
-  }
+function systemSignals(b) {
+  const lines = b.vsStandard?.lines || []
+  const sub = lines.some((l) => l.status === 'added' || l.status === 'missing')
+  const qty = lines.some((l) => l.status === 'major' || l.status === 'minor')
+  return { sub, qty, mix: sub || qty, kg: Boolean(b.unitFixes?.length), lab: (b.labCheck?.out || 0) > 0 }
 }
 
 /**
- * Which materials move a lab result: Pearson r between each material's mix share and the lab value,
- * over batches that have that lab value. Needs ≥ 8 batches and some variation in the material.
+ * One row per batch that has either a system finding or a user remark.
+ * check: 'match' | 'mismatch' | 'missing' (system found something, user wrote nothing) | 'unverified' (category "Other")
  */
-export function materialEffects(analysis, labKey) {
-  const spec = LAB_SPECS.find((s) => s.key === labKey)
-  if (!spec || spec.kind === 'text') return { spec, n: 0, rows: [] }
-  const pts = analysis.batches
-    .map((x) => ({ x, v: x.b.labCheck?.items.find((i) => i.key === labKey)?.actual }))
-    .filter((p) => p.v !== null && p.v !== undefined && Number.isFinite(p.v))
-  const rows = analysis.recipe
-    .map((m) => {
-      const xs = pts.map((p) => p.x.b.percents?.[m.key] || 0)
-      const ys = pts.map((p) => p.v)
-      const used = xs.filter((v) => v > 0).length
-      const r = pts.length >= 8 && used >= 3 ? pearson(xs, ys) : null
-      return { key: m.key, name: m.name, r, n: pts.length, used }
-    })
-    .filter((m) => m.r !== null)
-    .sort((a, b) => Math.abs(b.r) - Math.abs(a.r))
-  return { spec, n: pts.length, rows }
+export function remarkCheck(a) {
+  const rows = []
+  for (const x of a.batches) {
+    const b = x.b
+    const sig = systemSignals(b)
+    const system = [
+      ...autoRemarks(b.vsStandard, x.o.names),
+      ...(sig.kg ? [`${b.unitFixes.map((u) => x.o.names[u.key] || u.name).join(', ')} entered in kg`] : []),
+      ...(b.labCheck?.items || []).filter((i) => i.status === 'major' || i.status === 'minor').map((i) => `${i.label} ${String(i.actualText).trim()} (target ${i.targetText})`),
+    ]
+    const typed = [String(b.remarks ?? '').trim(), String(b.jobCardRow?.Notes ?? '').trim()].filter((t) => t && !/^0+$/.test(t))
+    const reviews = b.reviews || []
+    if (!system.length && !reviews.length) continue
+
+    let check
+    let reason
+    if (!reviews.length) {
+      check = 'missing'
+      reason = 'System found a difference but no root cause is written'
+    } else {
+      const r = reviews[0] // latest
+      const need = CAUSE_NEEDS[r.root_cause_category]
+      if (!need) {
+        check = 'unverified'
+        reason = '“Other” — cannot be checked automatically'
+      } else if (!system.length) {
+        check = 'mismatch'
+        reason = 'User gave a cause, but the system found the batch as per composition and lab'
+      } else {
+        const ok = (need.sub && sig.sub) || (need.qty && sig.qty) || (need.mix && sig.mix) || (need.kg && sig.kg) || (need.lab && sig.lab)
+        check = ok ? 'match' : 'mismatch'
+        reason = ok ? 'User cause agrees with the system finding' : `“${r.root_cause_category}” expects ${need.text}, the system did not see that`
+      }
+    }
+    // does the user's text name a material the system flagged? (extra confidence, shown only)
+    const flagged = (b.vsStandard?.lines || []).filter((l) => l.status !== 'ok').map((l) => x.o.names[l.key] || l.key)
+    const userText = reviews.map((r) => [r.root_cause_detail, r.analytics_report, r.remarks].join(' ')).join(' ').toLowerCase()
+    const mentions = flagged.filter((n) => userText.includes(String(n).toLowerCase().replace(/\s*\(.*$/, '').trim()))
+    rows.push({ ...x, system, typed, reviews, check, reason, mentions: [...new Set(mentions)] })
+  }
+  rows.sort((p, q) => (q.b.sortKey || 0) - (p.b.sortKey || 0))
+  const count = (c) => rows.filter((r) => r.check === c).length
+  const withUser = rows.filter((r) => r.reviews.length && r.check !== 'unverified').length
+  const score = withUser ? (count('match') / withUser) * 100 : null
+  return {
+    rows,
+    match: count('match'),
+    mismatch: count('mismatch'),
+    missing: count('missing'),
+    unverified: count('unverified'),
+    score, // % of checkable user remarks that agree with the system
+    coverage: rows.length ? ((rows.length - count('missing')) / rows.length) * 100 : null, // % of flagged batches that have a user remark
+  }
 }
 
-export const strength = (r) => {
-  const a = Math.abs(r)
-  return a >= 0.6 ? 'Strong' : a >= 0.4 ? 'Moderate' : a >= 0.2 ? 'Weak' : 'None'
+// ---------------------------------------------------------------------------------------------
+// Phase 2 — lab failure: lab results outside target, and lab data that is not proper in the report
+// (value typed but unreadable, test not filled, no target in the composition).
+// ---------------------------------------------------------------------------------------------
+
+export function labFailures(a) {
+  const rows = []
+  for (const x of a.batches) {
+    const items = x.b.labCheck?.items || []
+    if (!x.b.labCheck?.tested) continue
+    const failed = items.filter((i) => i.status === 'major' || i.status === 'minor')
+    const issues = []
+    // only problems in the lab report itself; Al₂O₃ / Fe₂O₃ are optional (rarely tested) and a missing target is a
+    // composition gap, so neither is counted here (both still show in the batch's lab table)
+    items.forEach((i) => {
+      const t = i.actualText === null || i.actualText === undefined ? '' : String(i.actualText).trim()
+      if (i.status === 'na' && t && !/^n\.?a\.?$/i.test(t)) issues.push(`${i.label}: “${t}” cannot be read as a value`)
+      else if (i.status === 'na' && i.kind !== 'chem' && i.targetText) issues.push(`${i.label}: target ${i.targetText} but ${t ? 'marked NA' : 'no result entered'}`)
+    })
+    if (!failed.length && !issues.length) continue
+    rows.push({ ...x, items, failed, issues })
+  }
+  return rows.sort((p, q) => (q.b.sortKey || 0) - (p.b.sortKey || 0))
 }

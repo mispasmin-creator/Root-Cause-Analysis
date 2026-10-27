@@ -90,7 +90,7 @@ export default function Compare() {
 
       <section className="card">
         <div className="card-head" style={{ alignItems: 'flex-end' }}>
-          <div className="field" style={{ minWidth: 240 }}>
+          <div className="field" style={{ flex: 1, minWidth: 240 }}>
             <label>Product</label>
             <select
               className="select"

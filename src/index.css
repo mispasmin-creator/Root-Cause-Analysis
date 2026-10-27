@@ -249,7 +249,7 @@ textarea {
 }
 .content {
   padding: 24px 28px 48px;
-  max-width: 1440px;
+  box-sizing: border-box;
   width: 100%;
 }
 
@@ -1500,4 +1500,25 @@ a.list-item:hover {
 .lab-sheet thead th.hd-lt2 {
   background: var(--lab-hd-lt2);
   color: var(--lab-hd-text);
+}
+
+/* centered popup (R&D root-cause form) — reuses .drawer-scrim / .drawer-head / .drawer-body */
+.modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(780px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  z-index: 51;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal .drawer-body > * {
+  flex-shrink: 0; /* the lab table must not be squeezed — the popup body scrolls instead */
 }

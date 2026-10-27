@@ -51,6 +51,8 @@ export default function App() {
               <Route path="compare" element={<Compare />} />
               <Route path="materials" element={<Materials />} />
               <Route path="rnd" element={<RnD />} />
+              {/* old R&D order links → the R&D page */}
+              <Route path="rnd/:key" element={<Navigate to="/rnd" replace />} />
               {/* old Settings page was removed — send old bookmarks to the dashboard */}
               <Route path="settings" element={<Navigate to="/" replace />} />
               <Route path="*" element={<NotFound />} />

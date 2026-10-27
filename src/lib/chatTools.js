@@ -188,7 +188,7 @@ function get_batch(args, { model }) {
       actual_rm_rs: r0(b.cost.actualCorrected ?? b.cost.actual),
       final_costing_per_mt_rs: r0(b.cost.costingPerMt),
     },
-    root_causes_recorded: b.reviews.map((r) => ({ category: r.root_cause_category, detail: r.root_cause_detail, status: r.status, by: r.reviewed_by })),
+    root_causes_recorded: b.reviews.map((r) => ({ category: r.root_cause_category, detail: r.root_cause_detail, analytics_report: r.analytics_report || null, remarks: r.remarks || null, status: r.status, by: r.reviewed_by })),
     link: `${orderLink(o)}?batch=${b.id}`,
   }
 }

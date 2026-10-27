@@ -7,6 +7,7 @@ import { IconX } from '../Icons.jsx'
 import { Badge, Notice, SeverityBadge } from '../ui.jsx'
 import CompareTable from './CompareTable.jsx'
 import ReviewForm from './ReviewForm.jsx'
+import ReviewList from './ReviewList.jsx'
 
 /** Everything about one batch: what was used, how it differs, lab/cost, and the recorded root cause. */
 export default function BatchDrawer({ order, batch, onClose }) {
@@ -165,28 +166,7 @@ export default function BatchDrawer({ order, batch, onClose }) {
               </span>
             </div>
             <div className="card-body stack">
-              {batch.reviews.map((r) => (
-                <div key={r.id} style={{ borderLeft: '3px solid var(--brand)', paddingLeft: 12 }}>
-                  <div className="row">
-                    <b>{r.root_cause_category}</b>
-                    <Badge tone={r.status === 'Closed' ? 'ok' : 'warning'}>{r.status}</Badge>
-                  </div>
-                  {r.root_cause_detail && <div style={{ marginTop: 4 }}>{r.root_cause_detail}</div>}
-                  {r.corrective_action && (
-                    <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-                      <b>Corrective:</b> {r.corrective_action}
-                    </div>
-                  )}
-                  {r.preventive_action && (
-                    <div className="muted" style={{ fontSize: 13 }}>
-                      <b>Preventive:</b> {r.preventive_action}
-                    </div>
-                  )}
-                  <div className="faint" style={{ fontSize: 11.5, marginTop: 4 }}>
-                    {r.reviewed_by || '—'} · {fmtDate(r.created_at)}
-                  </div>
-                </div>
-              ))}
+              <ReviewList reviews={batch.reviews} />
               {reviews.available ? (
                 <ReviewForm batch={batch} order={order} onSaved={refreshReviews} />
               ) : (
