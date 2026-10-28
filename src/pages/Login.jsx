@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { Notice } from '../components/ui.jsx'
+import ThemeToggle from '../components/ThemeToggle.jsx'
 
 export default function Login() {
   const { user, login } = useAuth()
@@ -27,6 +28,9 @@ export default function Login() {
 
   return (
     <div className="login-wrap">
+      <div className="login-theme">
+        <ThemeToggle />
+      </div>
       <form className="card login-card" onSubmit={submit}>
         <img src="/logo.png" alt="Passary logo" className="brand-logo lg" />
         <h1>Root Cause Analysis</h1>

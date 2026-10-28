@@ -1,10 +1,10 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { useData } from '../context/DataContext.jsx'
 import { labFailures, remarkCheck } from '../lib/rnd.js'
 import { fmtDate } from '../lib/format.js'
 import { firmLabel } from '../lib/normalize.js'
-import { CHECK, orderLink, pct } from '../lib/rndFormat.js'
+import { CHECK, pct } from '../lib/rndFormat.js'
 import { usePagination } from '../lib/pagination.js'
 import { Badge, Empty, Kpi, Segmented } from '../components/ui.jsx'
 import { IconBeaker, IconSearch } from '../components/Icons.jsx'
@@ -201,11 +201,12 @@ export default function RnD() {
   )
 }
 
-const BatchCell = ({ x }) => (
+// clicking the batch opens its popup on this page (no jump to Orders & batches)
+const BatchCell = ({ x, onOpen }) => (
   <td className="nowrap">
-    <Link className="chat-link" to={orderLink(x.o, x.b)}>
+    <button type="button" className="chat-link" onClick={() => onOpen(x.b.id)}>
       {x.o.doNo} · {x.b.jobCard}
-    </Link>
+    </button>
     <div className="faint truncate" style={{ fontSize: 12, maxWidth: 220 }} title={x.o.product}>
       {x.o.product} · {fmtDate(x.b.date)}
     </div>
@@ -235,7 +236,7 @@ function QualityTable({ rc, check, onOpen }) {
               const r = x.reviews[0]
               return (
                 <tr key={x.b.id}>
-                  <BatchCell x={x} />
+                  <BatchCell x={x} onOpen={onOpen} />
                   <td style={{ fontSize: 12.5 }}>
                     {x.system.length ? (
                       x.system.slice(0, 3).map((s, i) => (
@@ -313,7 +314,7 @@ function RemarksTable({ remarks, onOpen }) {
             {pg.slice(remarks).map((x) => (
               <tr key={x.r.id} style={{ verticalAlign: 'top' }}>
                 <td className="nowrap">{fmtDate(x.r.created_at)}</td>
-                <BatchCell x={x} />
+                <BatchCell x={x} onOpen={onOpen} />
                 <td style={{ fontWeight: 600 }}>{x.r.root_cause_category}</td>
                 <td>{cell(x.r.root_cause_detail)}</td>
                 <td>{cell(x.r.analytics_report)}</td>

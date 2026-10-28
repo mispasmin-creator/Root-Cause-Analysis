@@ -2,14 +2,12 @@
 // lab report table.
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { Link } from 'react-router-dom'
 import { useData } from '../../context/DataContext.jsx'
 import { fmtDate } from '../../lib/format.js'
 import { Badge, Notice } from '../ui.jsx'
 import { IconX } from '../Icons.jsx'
 import ReviewForm from '../rca/ReviewForm.jsx'
 import ReviewList from '../rca/ReviewList.jsx'
-import { orderLink } from '../../lib/rndFormat.js'
 
 /**
  * Root-cause form in a popup (shared by both phases). Rendered outside the table and looked up from the full
@@ -38,9 +36,6 @@ export function RootCauseModal({ x, title, causeLabel, onClose, children }) {
               {x.o.doNo} · {x.b.jobCard} · {x.o.product} · {fmtDate(x.b.date)} · {x.b.standard?.no || 'no composition'}
             </div>
           </div>
-          <Link className="btn btn-sm" to={orderLink(x.o, x.b)}>
-            Open batch
-          </Link>
           <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close" type="button">
             <IconX />
           </button>

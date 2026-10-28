@@ -446,6 +446,19 @@ textarea {
   width: 15px;
   height: 15px;
 }
+.theme-toggle {
+  justify-content: center;
+}
+.sidebar .theme-toggle {
+  width: 100%;
+  margin-bottom: 6px;
+}
+.theme-toggle.compact {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  margin: 0;
+}
 .input,
 .select,
 .textarea {
@@ -974,6 +987,11 @@ a.list-item:hover {
 .login-card {
   width: min(380px, 100%);
   padding: 28px;
+}
+.login-theme {
+  position: fixed;
+  top: 16px;
+  right: 16px;
 }
 .login-card h1 {
   font-size: 20px;

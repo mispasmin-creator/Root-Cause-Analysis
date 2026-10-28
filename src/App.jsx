@@ -11,6 +11,7 @@ import Compare from './pages/Compare.jsx'
 import Materials from './pages/Materials.jsx'
 import RnD from './pages/RnD.jsx'
 import RouteEffects from './components/RouteEffects.jsx'
+import { ThemeProvider } from './context/ThemeContext.jsx'
 
 function RequireAuth({ children }) {
   const { user } = useAuth()
@@ -32,8 +33,9 @@ function NotFound() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <DataProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <DataProvider>
         <BrowserRouter>
           <RouteEffects />
           <Routes>
@@ -59,7 +61,8 @@ export default function App() {
             </Route>
           </Routes>
         </BrowserRouter>
-      </DataProvider>
-    </AuthProvider>
+        </DataProvider>
+      </AuthProvider>
+    </ThemeProvider>
   )
 }

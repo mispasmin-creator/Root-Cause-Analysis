@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx'
 import { useData } from '../context/DataContext.jsx'
 import { Loader, Notice } from './ui.jsx'
 import ChatPanel from './ChatPanel.jsx'
+import ThemeToggle from './ThemeToggle.jsx'
 import {
   IconBeaker,
   IconCompare,
@@ -12,7 +13,6 @@ import {
   IconLogout,
   IconMenu,
   IconOrders,
-  IconRefresh,
 } from './Icons.jsx'
 
 const NAV = [
@@ -55,14 +55,7 @@ export default function Layout() {
           ))}
         </nav>
         <div style={{ padding: '0 12px 10px' }}>
-          <button className="btn btn-sm" style={{ width: '100%', justifyContent: 'center' }} onClick={reload} disabled={status.loading}>
-            <IconRefresh /> {status.loading ? 'Refreshing…' : 'Refresh data'}
-          </button>
-          {status.loadedAt && (
-            <div className="faint" style={{ fontSize: 11, textAlign: 'center', marginTop: 6 }}>
-              Synced {status.loadedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-            </div>
-          )}
+          <ThemeToggle />
         </div>
         <div className="sidebar-foot">
           <div className="avatar">{(user?.username || '?').slice(0, 1).toUpperCase()}</div>
@@ -87,6 +80,8 @@ export default function Layout() {
           </button>
           <img src="/logo.png" alt="" className="brand-logo sm" />
           <b>Root Cause Analysis</b>
+          <span className="spacer" />
+          <ThemeToggle compact />
         </div>
         <main className="content">
           {status.error && (

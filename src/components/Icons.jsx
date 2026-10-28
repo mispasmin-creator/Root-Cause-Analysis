@@ -71,6 +71,13 @@ export const IconLogout = make(
   </>,
 )
 export const IconMenu = make(<path d="M4 6h16M4 12h16M4 18h16" />)
+export const IconMoon = make(<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />)
+export const IconSun = make(
+  <>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41" />
+  </>,
+)
 export const IconX = make(<path d="M18 6 6 18M6 6l12 12" />)
 export const IconAlert = make(
   <>
@@ -114,4 +121,3 @@ export const IconChat = make(
     <path d="M8 12h.01M12 12h.01M16 12h.01" />
   </>,
 )
-
